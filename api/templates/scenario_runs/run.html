@@ -8,6 +8,18 @@
     <p>{{ scenario.description }}</p>
   </section>
 
+  {% if screens %}
+  <section class="screen-progress">
+    <div class="screen-progress-header">
+      <span id="screen-progress-step">Etapa 1 de {{ screens|length }}</span>
+      <span id="screen-progress-label">Narrativa</span>
+    </div>
+    <div class="screen-progress-bar">
+      <div id="screen-progress-fill" class="screen-progress-fill" style="width: {{ 100 / (screens|length) }}%"></div>
+    </div>
+  </section>
+  {% endif %}
+
   <section class="scenario-screens">
     <div id="scenario-screen-container"
          data-current-index="0">
@@ -22,9 +34,13 @@
 
     {% if screens|length > 1 %}
       <div class="screen-nav">
-        <button type="button" id="btn-prev-screen">Anterior</button>
-        <span id="screen-indicator">Tela 1 de {{ screens|length }}</span>
-        <button type="button" id="btn-next-screen">Próxima</button>
+        <button type="button" id="btn-prev-screen" class="nav-btn nav-prev">
+          ← Voltar
+        </button>
+        <span id="screen-indicator" class="screen-indicator">Tela 1 de {{ screens|length }}</span>
+        <button type="button" id="btn-next-screen" class="nav-btn nav-next">
+          Próximo →
+        </button>
       </div>
     {% endif %}
   </section>
@@ -292,8 +308,16 @@
       }
 
       function updateIndicator(currentIndex) {
-        if (!indicator) return;
-        indicator.textContent = `Tela ${currentIndex + 1} de ${screens.length}`;
+        if (indicator) {
+          indicator.textContent = `Tela ${currentIndex + 1} de ${screens.length}`;
+        }
+        const stepText = document.getElementById("screen-progress-step");
+        const barFill = document.getElementById("screen-progress-fill");
+        if (stepText) stepText.textContent = `Etapa ${currentIndex + 1} de ${screens.length}`;
+        if (barFill) {
+          const percent = ((currentIndex + 1) / screens.length) * 100;
+          barFill.style.width = `${percent}%`;
+        }
       }
 
       function updateNavButtons(currentIndex) {
@@ -308,8 +332,16 @@
 
         playButton.addEventListener("click", function () {
           const gifPath = gifImage.dataset.gifPath;
-          if (gifPath) {
+          if (!gifPath) return;
+          const isPlaying = gifImage.dataset.playing === "true";
+          if (isPlaying) {
+            gifImage.dataset.playing = "false";
+            gifImage.src = `/assets/images/${gifPath}`;
+            gifImage.classList.add("paused");
+          } else {
+            gifImage.dataset.playing = "true";
             gifImage.src = `/assets/images/${gifPath}?t=${Date.now()}`;
+            gifImage.classList.remove("paused");
           }
         });
       }
@@ -317,17 +349,36 @@
       function setupSlider(screenElement, screenData) {
         if (!screenElement || screenData?.screen_type !== "title_image_slider") return;
         const images = screenData.slider_images || [];
-        const imgEl = screenElement.querySelector(".screen-slider-image");
+        const imagesWrapper = screenElement.querySelector(".screen-slider-images");
         const captionEl = screenElement.querySelector(".screen-slider-caption");
         const prevBtn = screenElement.querySelector(".slider-prev");
         const nextBtn = screenElement.querySelector(".slider-next");
         let idx = 0;
 
-        function render() {
-          if (!images.length || !imgEl) return;
+        function render(direction = "forward") {
+          if (!images.length || !imagesWrapper) return;
           const current = images[idx];
-          imgEl.src = `/assets/images/${current.image_path}`;
-          imgEl.alt = current.caption || screenData.title || "Slide";
+
+          const oldActive = imagesWrapper.querySelector(".screen-slider-image.active");
+          // remove any leftover non-active images to avoid duplicates
+          imagesWrapper.querySelectorAll(".screen-slider-image:not(.active)").forEach((el) => el.remove());
+          const nextImg = document.createElement("img");
+          nextImg.className = "screen-slider-image active slider-fade-in";
+          nextImg.src = `/assets/images/${current.image_path}`;
+          nextImg.alt = current.caption || screenData.title || "Slide";
+          imagesWrapper.appendChild(nextImg);
+
+          if (oldActive) {
+            oldActive.classList.remove("active");
+            oldActive.classList.add("slider-fade-out");
+            oldActive.addEventListener("animationend", () => {
+              oldActive.remove();
+            }, { once: true });
+            setTimeout(() => {
+              if (oldActive.isConnected) oldActive.remove();
+            }, 600);
+          }
+
           if (captionEl) {
             if (current.caption) {
               captionEl.textContent = current.caption;
@@ -337,6 +388,7 @@
               captionEl.style.display = "none";
             }
           }
+
           if (prevBtn) prevBtn.disabled = idx === 0;
           if (nextBtn) nextBtn.disabled = idx >= images.length - 1;
         }
@@ -345,7 +397,7 @@
           prevBtn.addEventListener("click", function () {
             if (idx > 0) {
               idx -= 1;
-              render();
+              render("backward");
             }
           });
         }
@@ -353,7 +405,7 @@
           nextBtn.addEventListener("click", function () {
             if (idx < images.length - 1) {
               idx += 1;
-              render();
+              render("forward");
             }
           });
         }
@@ -402,6 +454,12 @@
               currentScreenElement.remove();
             }
           }
+          setTimeout(() => {
+            const stillThere = screenContainer.querySelectorAll(".scenario-screen");
+            if (stillThere.length > 1 && currentScreenElement && currentScreenElement.isConnected) {
+              currentScreenElement.remove();
+            }
+          }, 800);
         } catch (err) {
           console.error("Erro ao carregar tela do cenário", err);
         }

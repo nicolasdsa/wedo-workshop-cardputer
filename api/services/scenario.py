@@ -49,6 +49,15 @@ def list_scenarios(db: Session) -> list[Scenario]:
     return db.query(Scenario).order_by(Scenario.created_at.desc()).all()
 
 
+def list_scenarios_by_artist(db: Session, artist_id: int) -> list[Scenario]:
+    return (
+        db.query(Scenario)
+        .filter(Scenario.artist_id == artist_id)
+        .order_by(Scenario.created_at.desc())
+        .all()
+    )
+
+
 def update_scenario(
     db: Session,
     scenario_id: int,

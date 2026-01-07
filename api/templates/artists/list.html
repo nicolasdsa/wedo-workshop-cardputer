@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block title %}Artistas{% endblock %}
+
+{% block content %}
+<section class="artists-grid">
+  {% for artist in artists %}
+    <a class="artist-card" href="/ui/artists/{{ artist.id }}">
+      <div class="artist-photo" style="background-image: url('/assets/images/{{ artist.image_path or 'placeholder.png' }}');"></div>
+      <div class="artist-name">{{ artist.name }}</div>
+    </a>
+  {% endfor %}
+  {% if artists|length == 0 %}
+    <p>Não há artistas cadastrados ainda.</p>
+  {% endif %}
+</section>
+{% endblock %}

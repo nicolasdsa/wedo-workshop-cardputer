@@ -17,7 +17,10 @@
       <p>{{ screen.body_text }}</p>
     {% endif %}
     {% if screen.gif_path %}
-      <img src="/assets/images/{{ screen.gif_path }}" alt="Animação" class="screen-gif" data-gif-path="{{ screen.gif_path }}" />
+      <img src="/assets/images/{{ screen.gif_path }}"
+           alt="Animação"
+           class="screen-gif paused"
+           data-gif-path="{{ screen.gif_path }}" />
     {% endif %}
     {% if screen.button_label %}
       <button type="button" class="screen-play-btn">
@@ -27,17 +30,18 @@
 
   {% elif screen.screen_type == "title_image_slider" %}
     <h2>{{ screen.title }}</h2>
-    <div class="screen-slider"
-         data-screen-id="{{ screen.id }}">
-      {% if screen.slider_images %}
-        <img src="/assets/images/{{ screen.slider_images[0].image_path }}"
-             alt="{{ screen.slider_images[0].caption or screen.title }}"
-             class="screen-slider-image" />
-        {% if screen.slider_images[0].caption %}
-          <p class="screen-slider-caption">{{ screen.slider_images[0].caption }}</p>
+    <div class="screen-slider" data-screen-id="{{ screen.id }}">
+      <div class="screen-slider-images">
+        {% if screen.slider_images %}
+          <img src="/assets/images/{{ screen.slider_images[0].image_path }}"
+               alt="{{ screen.slider_images[0].caption or screen.title }}"
+               class="screen-slider-image active" />
+        {% else %}
+          <div class="screen-slider-placeholder">Não há imagens cadastradas para este slider.</div>
         {% endif %}
-      {% else %}
-        <p>Não há imagens cadastradas para este slider.</p>
+      </div>
+      {% if screen.slider_images and screen.slider_images[0].caption %}
+        <p class="screen-slider-caption">{{ screen.slider_images[0].caption }}</p>
       {% endif %}
       <div class="screen-slider-controls">
         <button type="button" class="slider-prev">◀</button>

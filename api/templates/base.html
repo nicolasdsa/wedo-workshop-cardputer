@@ -2,13 +2,22 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
-  <title>{% block title %}Laboratório Virtual de Química{% endblock %}</title>
+  <title>{% block title %}Fenômeno{% endblock %}</title>
   <link rel="stylesheet" href="/static/styles.css" />
-  <link rel="stylesheet" href="/static/animations.css" />
+  <link
+    rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/animate.css@4.1.1/animate.min.css"
+  />
 </head>
 <body>
-  <header>
-    <h1>Laboratório Virtual de Química</h1>
+  <header class="app-header">
+    <div class="header-left">
+      <span class="header-icon">🏛</span>
+    </div>
+    <div class="header-actions">
+      <button class="header-icon-btn" aria-label="Início">⌂</button>
+      <button class="header-icon-btn" aria-label="Ajuda">?</button>
+    </div>
   </header>
   <main id="main-content">
     {% block content %}{% endblock %}

@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}{{ artist.name }}{% endblock %}
+
+{% block content %}
+<section class="artist-hero">
+  <div class="artist-hero-left">
+    <div class="artist-hero-label">O ARTISTA</div>
+    <div class="artist-hero-name">{{ artist.name }}</div>
+    <div class="artist-hero-bio">{{ artist.bio }}</div>
+    {% if scenarios %}
+      <div class="artist-scenarios">
+        <h3>Cenários</h3>
+        <div class="artist-scenarios-list">
+          {% for sc in scenarios %}
+            <a class="scenario-pill" href="/ui/scenarios/{{ sc.id }}/run">{{ sc.title }}</a>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+  </div>
+  <div class="artist-hero-right">
+    <div class="artist-hero-photo" style="background-image: url('/assets/images/{{ artist.image_path or 'placeholder.png' }}');"></div>
+  </div>
+</section>
+
+{% if artist.timeline_entries %}
+<section class="timeline-section">
+  <h3>Linha do tempo</h3>
+  <div class="timeline">
+    {% for entry in artist.timeline_entries %}
+      <div class="timeline-item">
+        <div class="timeline-dot"></div>
+        <div class="timeline-content">
+          <div class="timeline-year">{{ entry.year }}</div>
+          {% if entry.title %}
+            <div class="timeline-title">{{ entry.title }}</div>
+          {% endif %}
+          <div class="timeline-description">{{ entry.description }}</div>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}
