@@ -6,6 +6,7 @@ from controllers import (
     scenario_run,
     ui_scenario,
     ui_scenario_run,
+    upload,
 )
 
 __all__ = [
@@ -16,4 +17,5 @@ __all__ = [
     "scenario_run",
     "ui_scenario",
     "ui_scenario_run",
+    "upload",
 ]

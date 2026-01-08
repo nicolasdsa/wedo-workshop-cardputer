@@ -113,6 +113,44 @@ def get_screen(db: Session, screen_id: int) -> ScenarioScreen:
     return screen
 
 
+def create_screen(
+    db: Session,
+    scenario: Scenario,
+    screen_data: dict,
+    commit: bool = True,
+) -> ScenarioScreen:
+    order_index = screen_data.get("order_index")
+    if order_index is None:
+        order_index = (scenario.screens[-1].order_index + 1) if scenario.screens else 0
+    created = create_screens_for_scenario(
+        db,
+        scenario,
+        [dict(screen_data, order_index=order_index)],
+        commit=commit,
+    )[0]
+    return created
+
+
+def delete_screen(db: Session, screen_id: int) -> None:
+    screen = get_screen(db, screen_id)
+    scenario_id = screen.scenario_id
+    db.delete(screen)
+    db.flush()
+
+    # Renormalize order_index for remaining screens of the scenario
+    remaining = (
+        db.query(ScenarioScreen)
+        .filter(ScenarioScreen.scenario_id == scenario_id)
+        .order_by(ScenarioScreen.order_index)
+        .all()
+    )
+    for idx, scr in enumerate(remaining):
+        scr.order_index = idx
+        db.add(scr)
+
+    db.commit()
+
+
 def update_screen_components(
     db: Session, screen_id: int, components: Sequence[dict], animation_key: str | None = None
 ) -> ScenarioScreen:

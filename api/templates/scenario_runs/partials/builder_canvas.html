@@ -1,6 +1,8 @@
 <div class="builder-canvas canvas-screen"
      data-screen-id="{{ screen.id }}"
+     data-scenario-id="{{ screen.scenario_id }}"
      data-screen-index="{{ index }}"
+     data-order-index="{{ screen.order_index }}"
      data-animation-key="{{ screen.animation_key or '' }}">
   {% if screen.components %}
     {% for component in screen.components %}

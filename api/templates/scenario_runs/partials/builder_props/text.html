@@ -1,0 +1,32 @@
+<div class="props-form" data-props-type="text">
+  <label class="props-field">
+    <span>Texto</span>
+    <textarea data-prop="text" rows="3"></textarea>
+  </label>
+  <label class="props-field">
+    <span>Tipo</span>
+    <select data-prop="variant">
+      <option value="paragraph">Parágrafo</option>
+      <option value="heading">Título</option>
+      <option value="subheading">Subtítulo</option>
+      <option value="caption">Legenda</option>
+    </select>
+  </label>
+  <label class="props-field">
+    <span>Alinhamento</span>
+    <select data-prop="align">
+      <option value="left">Esquerda</option>
+      <option value="center">Centralizado</option>
+      <option value="right">Direita</option>
+    </select>
+  </label>
+  <label class="props-field">
+    <span>Tamanho da fonte</span>
+    <input type="number" min="10" max="48" data-prop="font_size" placeholder="ex.: 18" />
+  </label>
+  <div class="props-inline">
+    <label><input type="checkbox" data-prop="bold" /> Negrito</label>
+    <label><input type="checkbox" data-prop="italic" /> Itálico</label>
+    <label><input type="checkbox" data-prop="underline" /> Sublinhado</label>
+  </div>
+</div>

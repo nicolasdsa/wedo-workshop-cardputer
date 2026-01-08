@@ -1,5 +1,18 @@
 {% set builder_mode = builder_mode | default(False) %}
 {% set props = component.props or {} %}
+{% set component_key = props.get("_key") if props is mapping and props.get("_key") else component.id %}
+{% macro asset_url(path) -%}
+  {%- if not path -%}
+  {%- elif path.startswith("http://") or path.startswith("https://") -%}
+    {{ path }}
+  {%- elif path.startswith("/") -%}
+    {{ path }}
+  {%- elif path.startswith("uploads/") -%}
+    {{ "/static/" ~ path }}
+  {%- else -%}
+    {{ "/assets/images/" ~ path }}
+  {%- endif -%}
+{%- endmacro %}
 {% set style_parts = [
   "left: " ~ (component.x or 0) ~ "%;",
   "top: " ~ (component.y or 0) ~ "%;",
@@ -13,20 +26,30 @@
 
 <div class="canvas-component{% if builder_mode %} builder-component{% endif %}"
      data-component-id="{{ component.id }}"
+     data-component-key="{{ component_key or component.id }}"
      data-component-type="{{ component.component_type }}"
      data-component-props='{{ props | tojson | safe }}'
      style="{{ ' '.join(style_parts) }}">
   {% if component.component_type == "text" %}
     {% set text = props.get("text") if props else "" %}
     {% set variant = props.get("variant", "body") if props else "body" %}
+    {% set align = props.get("align", "left") if props else "left" %}
+    {% set bold = props.get("bold") if props else False %}
+    {% set italic = props.get("italic") if props else False %}
+    {% set underline = props.get("underline") if props else False %}
+    {% set font_size = props.get("font_size") if props else None %}
     <div class="text-component text-{{ variant }}">
-      {{ text }}
+      <span class="text-inner text-align-{{ align }}{% if bold %} text-bold{% endif %}{% if italic %} text-italic{% endif %}{% if underline %} text-underline{% endif %}"
+            {% if font_size %}style="font-size: {{ font_size }}px"{% endif %}>
+        {{ text }}
+      </span>
     </div>
   {% elif component.component_type == "image" %}
     {% set src = props.get("src") if props else None %}
+    {% set fit = props.get("fit", "contain") if props else "contain" %}
     <div class="media-frame image-component">
       {% if src %}
-        <img src="/assets/images/{{ src }}" alt="{{ props.get('alt', 'Imagem') if props else 'Imagem' }}" />
+        <img src="{{ asset_url(src) }}" alt="{{ props.get('alt', 'Imagem') if props else 'Imagem' }}" style="object-fit: {{ fit }};" />
       {% else %}
         <div class="media-placeholder">Imagem não configurada</div>
       {% endif %}
@@ -36,7 +59,7 @@
     {% set show_controls = props.get("show_controls") if props else False %}
     <div class="media-frame gif-component" data-has-controls="{{ 'true' if show_controls else 'false' }}">
       {% if src %}
-        <img src="/assets/images/{{ src }}" alt="GIF" class="gif-image" data-gif-src="{{ src }}" />
+        <img src="{{ asset_url(src) }}" alt="{{ props.get('alt', 'GIF') if props else 'GIF' }}" class="gif-image" data-gif-src="{{ src }}" />
         {% if show_controls %}
           <button type="button" class="gif-toggle">Play/Pause</button>
         {% endif %}
@@ -49,7 +72,9 @@
     <div class="gallery-component" data-current-index="{{ props.get('start_index', 0) if props else 0 }}">
       <div class="gallery-stage">
         {% if items %}
-          <img src="/assets/images/{{ items[0].image_path }}" alt="{{ items[0].caption or 'Imagem' }}" class="gallery-image active" />
+          {% set first = items[0] %}
+          {% set gallery_src = first.src or first.image_path %}
+          <img src="{{ asset_url(gallery_src) }}" alt="{{ first.caption or 'Imagem' }}" class="gallery-image active" />
         {% else %}
           <div class="media-placeholder">Galeria vazia</div>
         {% endif %}
@@ -57,10 +82,13 @@
       <div class="gallery-caption" {% if not items or not items[0].caption %}style="display: none"{% endif %}>
         {{ items[0].caption if items else "" }}
       </div>
-      <div class="gallery-controls">
-        <button type="button" class="gallery-prev">◀</button>
-        <button type="button" class="gallery-next">▶</button>
-      </div>
+      {% set show_controls = props.get("show_controls", True) if props else True %}
+      {% if show_controls %}
+        <div class="gallery-controls">
+          <button type="button" class="gallery-prev">◀</button>
+          <button type="button" class="gallery-next">▶</button>
+        </div>
+      {% endif %}
     </div>
   {% elif component.component_type == "button" %}
     {% set label = props.get("label", "Próximo") if props else "Próximo" %}
@@ -68,7 +96,8 @@
     <button type="button"
             class="canvas-button"
             data-button-action="{{ action.get('type', 'next') }}"
-            {% if action.get('target_index') is not none %}data-target-index="{{ action.get('target_index') }}"{% endif %}>
+            {% if action.get('target_index') is not none %}data-target-index="{{ action.get('target_index') }}"{% endif %}
+            {% if action.get('target_component_key') %}data-target-component-key="{{ action.get('target_component_key') }}"{% endif %}>
       {{ label }}
     </button>
   {% else %}

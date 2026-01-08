@@ -300,6 +300,8 @@
       const indicator = document.getElementById("screen-indicator");
       const scenarioId = {{ scenario.id }};
       let screens = [];
+      let isTransitioning = false;
+      let currentFetch = null;
 
       try {
         screens = JSON.parse(screensDataScript?.textContent || "[]");
@@ -323,6 +325,14 @@
       function updateNavButtons(currentIndex) {
         if (btnPrev) btnPrev.disabled = currentIndex <= 0;
         if (btnNext) btnNext.disabled = currentIndex >= screens.length - 1;
+      }
+
+      function assetUrl(path) {
+        if (!path) return "";
+        if (path.startsWith("http://") || path.startsWith("https://")) return path;
+        if (path.startsWith("/")) return path;
+        if (path.startsWith("uploads/")) return `/static/${path}`;
+        return `/assets/images/${path}`;
       }
 
       function parseComponentProps(componentEl, screenData) {
@@ -365,6 +375,11 @@
           return;
         }
 
+        if (props.show_controls === false) {
+          if (prevBtn) prevBtn.style.display = "none";
+          if (nextBtn) nextBtn.style.display = "none";
+        }
+
         stage.querySelectorAll(".media-placeholder").forEach((node) => node.remove());
 
         function render() {
@@ -372,7 +387,7 @@
           const current = items[idx];
           const nextImg = document.createElement("img");
           nextImg.className = "gallery-image active slider-fade-in";
-          nextImg.src = `/assets/images/${current.image_path}`;
+          nextImg.src = assetUrl(current.src || current.image_path);
           nextImg.alt = current.caption || "Slide";
           stage.appendChild(nextImg);
 
@@ -439,11 +454,11 @@
           const isPlaying = gifImage.dataset.playing === "true";
           if (isPlaying) {
             gifImage.dataset.playing = "false";
-            gifImage.src = `/assets/images/${gifPath}`;
+            gifImage.src = assetUrl(gifPath);
             gifImage.classList.add("paused");
           } else {
             gifImage.dataset.playing = "true";
-            gifImage.src = `/assets/images/${gifPath}?t=${Date.now()}`;
+            gifImage.src = assetUrl(gifPath) + `?t=${Date.now()}`;
             gifImage.classList.remove("paused");
           }
         });
@@ -453,12 +468,23 @@
         if (!componentEl) return;
         const actionType = componentEl.dataset.buttonAction || "next";
         const targetIndexAttr = componentEl.dataset.targetIndex;
+        const targetComponentKey = componentEl.dataset.targetComponentKey;
 
         componentEl.addEventListener("click", function () {
           if (actionType === "goto" && targetIndexAttr !== undefined && targetIndexAttr !== "") {
             const targetIdx = Number(targetIndexAttr);
             if (!Number.isNaN(targetIdx)) {
               loadScreen(targetIdx);
+            }
+            return;
+          }
+          if (actionType === "toggle_gif" && targetComponentKey) {
+            const currentScreen = componentEl.closest(".scenario-screen");
+            if (currentScreen) {
+              const target = currentScreen.querySelector(
+                `.canvas-component[data-component-key="${targetComponentKey}"] .gif-toggle`
+              );
+              if (target) target.click();
             }
             return;
           }
@@ -486,22 +512,39 @@
       }
 
       async function loadScreen(index) {
+        if (isTransitioning) return;
         if (!screenContainer || !screens.length || index < 0 || index >= screens.length) {
           return;
         }
 
+        isTransitioning = true;
+
+        if (currentFetch && currentFetch.abort) {
+          try { currentFetch.abort(); } catch (err) {}
+        }
+        const controller = new AbortController();
+        currentFetch = controller;
+
         const currentScreenElement = screenContainer.querySelector(".scenario-screen");
 
         try {
-          const response = await fetch(`/ui/scenarios/${scenarioId}/screens/${index}`);
+          const response = await fetch(`/ui/scenarios/${scenarioId}/screens/${index}`, { signal: controller.signal });
           if (!response.ok) {
+            isTransitioning = false;
             return;
           }
           const html = await response.text();
           const temp = document.createElement("div");
           temp.innerHTML = html.trim();
           const nextElement = temp.firstElementChild;
-          if (!nextElement) return;
+          if (!nextElement) {
+            isTransitioning = false;
+            return;
+          }
+
+          nextElement.style.position = "absolute";
+          nextElement.style.inset = "0";
+          nextElement.classList.add("screen-fade-in");
 
           screenContainer.appendChild(nextElement);
           attachScreenBehaviors(nextElement, screens[index], index);
@@ -516,19 +559,35 @@
               nextElement,
               animationKey
             );
-          } else {
-            if (currentScreenElement && currentScreenElement !== nextElement) {
-              currentScreenElement.remove();
-            }
           }
-          setTimeout(() => {
-            const stillThere = screenContainer.querySelectorAll(".scenario-screen");
-            if (stillThere.length > 1 && currentScreenElement && currentScreenElement.isConnected) {
-              currentScreenElement.remove();
-            }
-          }, 800);
+
+          if (currentScreenElement) {
+            currentScreenElement.classList.add("screen-fade-out");
+            currentScreenElement.addEventListener(
+              "animationend",
+              () => {
+                if (currentScreenElement && currentScreenElement.isConnected) {
+                  currentScreenElement.remove();
+                }
+                nextElement.classList.remove("screen-fade-in");
+                isTransitioning = false;
+              },
+              { once: true }
+            );
+            setTimeout(() => {
+              if (currentScreenElement && currentScreenElement.isConnected) {
+                currentScreenElement.remove();
+              }
+              nextElement.classList.remove("screen-fade-in");
+              isTransitioning = false;
+            }, 600);
+          } else {
+            nextElement.classList.remove("screen-fade-in");
+            isTransitioning = false;
+          }
         } catch (err) {
           console.error("Erro ao carregar tela do cenário", err);
+          isTransitioning = false;
         }
       }
 

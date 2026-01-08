@@ -16,6 +16,7 @@ from routers import (
     artist,
     scenario_screen,
     ui_artist,
+    upload,
 )
 
 settings = get_settings()
@@ -39,4 +40,5 @@ app.include_router(ui_scenario_run.router)
 app.include_router(artist.router)
 app.include_router(scenario_screen.router)
 app.include_router(ui_artist.router)
+app.include_router(upload.router)
 register_exception_handlers(app)

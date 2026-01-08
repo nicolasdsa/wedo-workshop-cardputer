@@ -5,25 +5,20 @@
 {% block content %}
   <section class="builder-header">
     <h2>Canvas de componentes - {{ scenario.title }}</h2>
-    <p>Arraste e redimensione os blocos para montar as telas. Clique em Salvar para persistir.</p>
+    <p>Arraste e redimensione blocos, edite propriedades e salve. Use uploads para imagens/GIFs.</p>
   </section>
 
   <section class="builder-layout">
     <aside class="builder-sidebar">
-      <h3>Telas</h3>
-      <div class="builder-screen-list">
-        {% for screen in screens %}
-          <button class="builder-screen-btn{% if loop.index0 == 0 %} active{% endif %}"
-                  data-index="{{ loop.index0 }}"
-                  hx-get="/ui/scenarios/{{ scenario.id }}/builder/screens/{{ loop.index0 }}"
-                  hx-target="#builder-canvas"
-                  hx-swap="innerHTML">
-            Tela {{ loop.index }} <small>#{{ screen.id }}</small>
-          </button>
-        {% endfor %}
-        {% if not screens %}
-          <p class="canvas-empty">Nenhuma tela cadastrada.</p>
-        {% endif %}
+      <div class="builder-sidebar-header">
+        <h3>Telas</h3>
+        <div class="builder-sidebar-actions">
+          <button type="button" id="create-screen" class="ghost-btn">+ Nova</button>
+          <button type="button" id="delete-screen" class="ghost-btn danger">Excluir</button>
+        </div>
+      </div>
+      <div class="builder-screen-list" id="builder-screen-list" data-scenario-id="{{ scenario.id }}">
+        {% include "scenario_runs/partials/builder_screen_list.html" %}
       </div>
 
       <div class="builder-palette">
@@ -61,31 +56,68 @@
         {% endif %}
       </div>
 
-      <div class="builder-props">
+      <div class="builder-props" id="builder-props">
         <div class="builder-props-header">
           <h4>Propriedades do componente</h4>
-          <span class="props-hint">Edite em JSON simples (props)</span>
+          <span class="props-hint">Selecione um componente para editar.</span>
         </div>
-        <textarea id="component-props" rows="6" placeholder='{"text": "Conteúdo", "variant": "body"}'></textarea>
-        <button type="button" id="apply-props">Aplicar props</button>
+        <div id="props-content" class="props-content"></div>
+        <div class="props-actions">
+          <button type="button" id="delete-component" class="ghost-btn danger">Excluir componente</button>
+        </div>
       </div>
     </section>
   </section>
+
+  <div id="props-templates" style="display: none;">
+    <template data-template="text">
+      {% include "scenario_runs/partials/builder_props/text.html" %}
+    </template>
+    <template data-template="image">
+      {% include "scenario_runs/partials/builder_props/image.html" %}
+    </template>
+    <template data-template="gif">
+      {% include "scenario_runs/partials/builder_props/gif.html" %}
+    </template>
+    <template data-template="gallery">
+      {% include "scenario_runs/partials/builder_props/gallery.html" %}
+    </template>
+    <template data-template="button">
+      {% include "scenario_runs/partials/builder_props/button.html" %}
+    </template>
+  </div>
+
+  <template id="gallery-item-template">
+    <div class="gallery-item-row">
+      <div class="props-upload">
+        <input type="file" accept="image/*" data-upload="item-src" />
+        <button type="button" class="upload-trigger">Escolher</button>
+        <span class="upload-filename" data-upload-label></span>
+      </div>
+      <input type="text" data-gallery-caption placeholder="Legenda" />
+      <button type="button" class="ghost-btn danger gallery-remove">Remover</button>
+    </div>
+  </template>
 
   <script>
     (function () {
       const canvasContainer = document.getElementById("builder-canvas");
       const paletteButtons = document.querySelectorAll(".palette-btn");
       const saveButton = document.getElementById("builder-save");
-      const propsTextarea = document.getElementById("component-props");
-      const applyPropsButton = document.getElementById("apply-props");
       const animationInput = document.getElementById("animation-key-input");
-      const screenButtons = document.querySelectorAll(".builder-screen-btn");
+      const propsContainer = document.getElementById("props-content");
+      const propsTemplates = document.getElementById("props-templates");
+      const deleteComponentBtn = document.getElementById("delete-component");
+      const createScreenBtn = document.getElementById("create-screen");
+      const deleteScreenBtn = document.getElementById("delete-screen");
+      const screenListEl = document.getElementById("builder-screen-list");
+      const scenarioId = Number(screenListEl?.dataset.scenarioId || 0);
+
       const defaultProps = {
-        text: { text: "Novo texto", variant: "body" },
-        image: { src: "", alt: "Imagem" },
-        gallery: { items: [], start_index: 0 },
-        gif: { src: "", show_controls: true },
+        text: { text: "Novo texto", variant: "paragraph", align: "left" },
+        image: { src: "", alt: "Imagem", fit: "contain" },
+        gallery: { items: [], start_index: 0, transition: "fade", show_controls: true },
+        gif: { src: "", alt: "GIF", show_controls: true },
         button: { label: "Próximo", action: { type: "next" } },
       };
       const defaultSizes = {
@@ -98,6 +130,20 @@
 
       let selectedComponent = null;
       let currentScreenId = null;
+      let draftComponents = [];
+      let saveTimeout = null;
+
+      function uid() {
+        return `temp-${Math.random().toString(16).slice(2)}${Date.now()}`;
+      }
+
+      function assetUrl(path) {
+        if (!path) return "";
+        if (path.startsWith("http://") || path.startsWith("https://")) return path;
+        if (path.startsWith("/")) return path;
+        if (path.startsWith("uploads/")) return `/static/${path}`;
+        return `/assets/images/${path}`;
+      }
 
       function getCanvas() {
         return canvasContainer?.querySelector(".builder-canvas");
@@ -116,45 +162,110 @@
         el.dataset.componentProps = JSON.stringify(props || {});
         const type = el.dataset.componentType;
         if (type === "text") {
-          const textEl = el.querySelector(".text-component");
-          if (textEl) textEl.textContent = props.text || "";
+          const wrapper = el.querySelector(".text-component");
+          if (wrapper) {
+            wrapper.className = `text-component text-${props.variant || "paragraph"}`;
+            let inner = wrapper.querySelector(".text-inner");
+            if (!inner) {
+              inner = document.createElement("span");
+              inner.className = "text-inner";
+              wrapper.appendChild(inner);
+            }
+            inner.className = [
+              "text-inner",
+              `text-align-${props.align || "left"}`,
+              props.bold ? "text-bold" : "",
+              props.italic ? "text-italic" : "",
+              props.underline ? "text-underline" : "",
+            ].filter(Boolean).join(" ");
+            inner.style.fontSize = props.font_size ? `${props.font_size}px` : "";
+            inner.textContent = props.text || "";
+          }
         } else if (type === "button") {
           const btn = el.querySelector(".canvas-button");
           if (btn) {
             btn.textContent = props.label || "Próximo";
             btn.dataset.buttonAction = props.action?.type || "next";
-            if (props.action && props.action.target_index !== undefined) {
+            if (props.action && props.action.target_index !== undefined && props.action.target_index !== null) {
               btn.dataset.targetIndex = props.action.target_index;
             } else {
               btn.removeAttribute("data-target-index");
+            }
+            if (props.action && props.action.target_component_key) {
+              btn.dataset.targetComponentKey = props.action.target_component_key;
+            } else {
+              btn.removeAttribute("data-target-component-key");
             }
           }
         } else if (type === "image" || type === "gif") {
           const img = el.querySelector("img");
           if (img && props.src) {
-            img.src = `/assets/images/${props.src}`;
+            img.src = assetUrl(props.src);
             img.dataset.gifSrc = props.src;
+            if (props.fit) img.style.objectFit = props.fit;
+            if (props.alt) img.alt = props.alt;
           }
         } else if (type === "gallery") {
+          const stage = el.querySelector(".gallery-stage");
           const caption = el.querySelector(".gallery-caption");
-          if (caption) caption.textContent = props.items?.[0]?.caption || "";
+          const controls = el.querySelector(".gallery-controls");
+          if (stage) {
+            stage.innerHTML = "";
+            const items = props.items || [];
+            if (items.length) {
+              const first = items[0];
+              const img = document.createElement("img");
+              img.className = "gallery-image active";
+              img.src = assetUrl(first.src || first.image_path);
+              img.alt = first.caption || "Slide";
+              stage.appendChild(img);
+            } else {
+              stage.innerHTML = '<div class="media-placeholder">Galeria</div>';
+            }
+          }
+          if (caption) {
+            const first = props.items?.[0];
+            caption.textContent = first?.caption || "";
+            caption.style.display = first?.caption ? "" : "none";
+          }
+          if (controls) {
+            controls.style.display = props.show_controls === false ? "none" : "";
+          }
         }
       }
 
-      function selectComponent(el) {
-        document.querySelectorAll(".builder-component.selected").forEach((node) => {
-          node.classList.remove("selected");
+      function syncDraftFromDom() {
+        const canvas = getCanvas();
+        if (!canvas) return;
+        draftComponents = Array.from(canvas.querySelectorAll(".builder-component")).map((el, idx) => {
+          const props = parseProps(el);
+          if (!props._key) props._key = el.dataset.componentKey || uid();
+          return {
+            id: el.dataset.componentId ? Number(el.dataset.componentId) : undefined,
+            key: props._key,
+            component_type: el.dataset.componentType,
+            x: parseFloat(el.style.left) || 0,
+            y: parseFloat(el.style.top) || 0,
+            w: parseFloat(el.style.width) || 0,
+            h: parseFloat(el.style.height) || 0,
+            rotate: null,
+            z_index: idx,
+            props: props || {},
+          };
         });
+      }
+
+      function selectComponent(el) {
+        document.querySelectorAll(".builder-component.selected").forEach((node) => node.classList.remove("selected"));
         selectedComponent = el;
         if (selectedComponent) {
           selectedComponent.classList.add("selected");
           const props = parseProps(selectedComponent);
-          if (propsTextarea) {
-            propsTextarea.value = JSON.stringify(props, null, 2);
-          }
-        } else if (propsTextarea) {
-          propsTextarea.value = "";
+          renderPropsPanel(selectedComponent.dataset.componentType, props);
+        } else {
+          renderPropsPanel(null, {});
         }
+        syncDraftFromDom();
       }
 
       function startDrag(event, el) {
@@ -181,6 +292,8 @@
         function onUp() {
           window.removeEventListener("pointermove", onMove);
           window.removeEventListener("pointerup", onUp);
+          syncDraftFromDom();
+          queueSave();
         }
 
         window.addEventListener("pointermove", onMove);
@@ -209,6 +322,8 @@
         function onUp() {
           window.removeEventListener("pointermove", onMove);
           window.removeEventListener("pointerup", onUp);
+          syncDraftFromDom();
+          queueSave();
         }
 
         window.addEventListener("pointermove", onMove);
@@ -234,22 +349,40 @@
 
       function renderComponentInner(type, props) {
         if (type === "text") {
-          return `<div class="text-component text-${props.variant || "body"}">${props.text || ""}</div>`;
+          const innerClasses = [
+            "text-inner",
+            `text-align-${props.align || "left"}`,
+            props.bold ? "text-bold" : "",
+            props.italic ? "text-italic" : "",
+            props.underline ? "text-underline" : "",
+          ].filter(Boolean).join(" ");
+          const sizeStyle = props.font_size ? ` style="font-size:${props.font_size}px"` : "";
+          return `<div class="text-component text-${props.variant || "paragraph"}"><span class="${innerClasses}"${sizeStyle}>${props.text || ""}</span></div>`;
         }
         if (type === "button") {
           const targetAttr = props.action && props.action.target_index !== undefined
             ? ` data-target-index="${props.action.target_index}"`
             : "";
-          return `<button type="button" class="canvas-button" data-button-action="${props.action?.type || "next"}"${targetAttr}>${props.label || "Próximo"}</button>`;
+          const gifAttr = props.action && props.action.target_component_key
+            ? ` data-target-component-key="${props.action.target_component_key}"`
+            : "";
+          return `<button type="button" class="canvas-button" data-button-action="${props.action?.type || "next"}"${targetAttr}${gifAttr}>${props.label || "Próximo"}</button>`;
         }
         if (type === "image") {
-          return `<div class="media-frame image-component">${props.src ? `<img src="/assets/images/${props.src}" alt="${props.alt || "Imagem"}" />` : `<div class="media-placeholder">Imagem</div>`}</div>`;
+          const src = props.src ? assetUrl(props.src) : "";
+          return `<div class="media-frame image-component">${props.src ? `<img src="${src}" alt="${props.alt || "Imagem"}" style="object-fit:${props.fit || "contain"};" />` : `<div class="media-placeholder">Imagem</div>`}</div>`;
         }
         if (type === "gif") {
-          return `<div class="media-frame gif-component"><img class="gif-image" data-gif-src="${props.src || ""}" src="${props.src ? "/assets/images/" + props.src : ""}" alt="GIF" /></div>`;
+          const src = props.src ? assetUrl(props.src) : "";
+          return `<div class="media-frame gif-component"><img class="gif-image" data-gif-src="${props.src || ""}" src="${src}" alt="${props.alt || "GIF"}" /></div>`;
         }
         if (type === "gallery") {
-          return `<div class="gallery-component"><div class="gallery-stage">${(props.items && props.items[0]?.image_path) ? `<img class="gallery-image active" src="/assets/images/${props.items[0].image_path}" alt="${props.items[0].caption || ""}" />` : `<div class="media-placeholder">Galeria</div>`}</div><div class="gallery-caption">${props.items?.[0]?.caption || ""}</div><div class="gallery-controls"><button type="button" class="gallery-prev">◀</button><button type="button" class="gallery-next">▶</button></div></div>`;
+          const first = props.items?.[0];
+          const src = first ? assetUrl(first.src || first.image_path) : "";
+          const caption = first?.caption || "";
+          const controls = props.show_controls === false ? "" : `<div class="gallery-controls"><button type="button" class="gallery-prev">◀</button><button type="button" class="gallery-next">▶</button></div>`;
+          const imageHtml = first ? `<img class="gallery-image active" src="${src}" alt="${caption}" />` : `<div class="media-placeholder">Galeria</div>`;
+          return `<div class="gallery-component"><div class="gallery-stage">${imageHtml}</div><div class="gallery-caption"${caption ? "" : ' style="display:none"'}>${caption}</div>${controls}</div>`;
         }
         return `<div class="canvas-unknown">Componente</div>`;
       }
@@ -258,10 +391,12 @@
         const canvas = getCanvas();
         if (!canvas) return;
         const props = JSON.parse(JSON.stringify(defaultProps[type] || {}));
+        props._key = uid();
         const size = defaultSizes[type] || { w: 30, h: 20 };
         const el = document.createElement("div");
         el.className = "canvas-component builder-component";
         el.dataset.componentType = type;
+        el.dataset.componentKey = props._key;
         el.dataset.componentProps = JSON.stringify(props);
         el.style.left = "8%";
         el.style.top = "8%";
@@ -272,6 +407,8 @@
         canvas.appendChild(el);
         setupComponent(el);
         selectComponent(el);
+        syncDraftFromDom();
+        queueSave();
       }
 
       function refreshAnimationInput() {
@@ -290,26 +427,17 @@
         currentScreenId = Number(canvas.dataset.screenId);
         canvas.querySelectorAll(".builder-component").forEach((el) => setupComponent(el));
         refreshAnimationInput();
+        syncDraftFromDom();
         const first = canvas.querySelector(".builder-component");
         if (first) selectComponent(first);
+        else renderPropsPanel(null, {});
       }
 
       function collectComponents() {
         const canvas = getCanvas();
         if (!canvas) return [];
-        return Array.from(canvas.querySelectorAll(".builder-component")).map((el, idx) => {
-          const props = parseProps(el);
-          return {
-            component_type: el.dataset.componentType,
-            x: parseFloat(el.style.left) || 0,
-            y: parseFloat(el.style.top) || 0,
-            w: parseFloat(el.style.width) || 0,
-            h: parseFloat(el.style.height) || 0,
-            rotate: null,
-            z_index: idx,
-            props: props || {},
-          };
-        });
+        syncDraftFromDom();
+        return draftComponents;
       }
 
       async function saveScreen() {
@@ -326,13 +454,30 @@
             body: JSON.stringify(payload),
           });
           if (response.ok) {
-            alert("Tela salva com sucesso!");
-          } else {
-            alert("Erro ao salvar a tela.");
+            const json = await response.json();
+            draftComponents = (json.components || []).map((c) => ({
+              id: c.id,
+              key: c.props?._key || c.id || uid(),
+              component_type: c.component_type,
+              x: c.x,
+              y: c.y,
+              w: c.w,
+              h: c.h,
+              rotate: c.rotate,
+              z_index: c.z_index,
+              props: c.props || {},
+            }));
           }
         } catch (err) {
-          alert("Erro ao salvar a tela.");
+          console.error("Erro ao salvar tela", err);
+        } finally {
+          saveTimeout = null;
         }
+      }
+
+      function queueSave(delay = 500) {
+        if (saveTimeout) clearTimeout(saveTimeout);
+        saveTimeout = window.setTimeout(saveScreen, delay);
       }
 
       paletteButtons.forEach((btn) => {
@@ -348,32 +493,331 @@
         });
       }
 
-      if (applyPropsButton) {
-        applyPropsButton.addEventListener("click", () => {
-          if (!selectedComponent || !propsTextarea) return;
+      if (animationInput) {
+        animationInput.addEventListener("change", () => queueSave());
+        animationInput.addEventListener("input", () => queueSave());
+      }
+
+      function renderPropsPanel(type, props) {
+        if (!propsContainer) return;
+        propsContainer.innerHTML = "";
+        if (!type) return;
+        const tpl = propsTemplates?.querySelector(`template[data-template="${type}"]`);
+        if (!tpl) return;
+        const clone = tpl.content.cloneNode(true);
+        propsContainer.appendChild(clone);
+        bindPropsInputs(type, props);
+      }
+
+      function setFieldValue(input, value) {
+        if (!input) return;
+        if (input.type === "checkbox") {
+          input.checked = Boolean(value);
+        } else {
+          input.value = value ?? "";
+        }
+      }
+
+      function bindPropsInputs(type, props) {
+        if (!propsContainer || !selectedComponent) return;
+        props = props || {};
+
+        propsContainer.querySelectorAll("[data-prop]").forEach((input) => {
+          const propPath = input.dataset.prop;
+          const current = propPath.split(".").reduce((acc, key) => (acc ? acc[key] : undefined), props);
+          setFieldValue(input, current);
+          input.addEventListener("input", () => updatePropValue(propPath, input));
+          input.addEventListener("change", () => updatePropValue(propPath, input));
+        });
+
+        propsContainer.querySelectorAll("input[type='file'][data-upload]").forEach((input) => {
+          const trigger = input.parentElement?.querySelector(".upload-trigger");
+          const label = input.parentElement?.querySelector("[data-upload-label]");
+          if (trigger) {
+            trigger.addEventListener("click", () => input.click());
+          }
+          input.addEventListener("change", async () => {
+            if (!input.files || !input.files[0]) return;
+            if (label) label.textContent = input.files[0].name;
+            const uploaded = await uploadFile(input.files[0]);
+            if (uploaded) {
+              const path = uploaded.path;
+              updateProps({ [input.dataset.upload === "src" ? "src" : "src"]: path });
+            }
+          });
+        });
+
+        if (type === "gallery") {
+          const listEl = propsContainer.querySelector("[data-gallery-items]");
+          const addBtn = propsContainer.querySelector(".gallery-add-item");
+          const items = props.items || [];
+          const renderItems = () => {
+            if (!listEl) return;
+            listEl.innerHTML = "";
+            items.forEach((item, idx) => {
+              const tpl = document.getElementById("gallery-item-template");
+              if (!tpl) return;
+              const node = tpl.content.cloneNode(true);
+              const row = node.querySelector(".gallery-item-row");
+              const fileInput = row.querySelector("input[type='file']");
+              const captionInput = row.querySelector("[data-gallery-caption]");
+              const removeBtn = row.querySelector(".gallery-remove");
+              const label = row.querySelector("[data-upload-label]");
+              if (captionInput) {
+                captionInput.value = item.caption || "";
+                captionInput.addEventListener("input", () => {
+                  items[idx].caption = captionInput.value;
+                  updateProps({ items: items });
+                });
+              }
+              if (fileInput) {
+                if (label) label.textContent = item.src || item.image_path || "";
+                const trigger = row.querySelector(".upload-trigger");
+                if (trigger) trigger.addEventListener("click", () => fileInput.click());
+                fileInput.addEventListener("change", async () => {
+                  if (!fileInput.files || !fileInput.files[0]) return;
+                  const uploaded = await uploadFile(fileInput.files[0]);
+                  if (uploaded) {
+                    items[idx].src = uploaded.path;
+                    if (label) label.textContent = uploaded.path;
+                    updateProps({ items: items });
+                  }
+                });
+              }
+              if (removeBtn) {
+                removeBtn.addEventListener("click", () => {
+                  items.splice(idx, 1);
+                  updateProps({ items: items });
+                  renderItems();
+                });
+              }
+              listEl.appendChild(node);
+            });
+          };
+          if (addBtn) {
+            addBtn.addEventListener("click", () => {
+              items.push({ src: "", caption: "" });
+              updateProps({ items: items });
+              renderItems();
+            });
+          }
+          renderItems();
+        }
+
+        if (type === "button") {
+          const actionSelect = propsContainer.querySelector("[data-prop='action.type']");
+          const gotoField = propsContainer.querySelector(".conditional-goto");
+          const toggleField = propsContainer.querySelector(".conditional-toggle");
+          const gifSelect = propsContainer.querySelector("[data-gif-options]");
+          if (actionSelect) {
+            actionSelect.addEventListener("change", () => {
+              updatePropValue("action.type", actionSelect);
+              updateActionVisibility(actionSelect.value, gotoField, toggleField);
+            });
+            updateActionVisibility(actionSelect.value, gotoField, toggleField);
+          }
+          if (gifSelect) {
+            populateGifOptions(gifSelect, props.action?.target_component_key);
+            gifSelect.addEventListener("change", () => {
+              updatePropValue("action.target_component_key", gifSelect);
+            });
+          }
+        }
+      }
+
+      function updateActionVisibility(actionType, gotoField, toggleField) {
+        if (gotoField) gotoField.style.display = actionType === "goto" ? "" : "none";
+        if (toggleField) toggleField.style.display = actionType === "toggle_gif" ? "" : "none";
+      }
+
+      function populateGifOptions(selectEl, currentValue) {
+        const canvas = getCanvas();
+        if (!canvas || !selectEl) return;
+        const gifs = Array.from(canvas.querySelectorAll(".builder-component[data-component-type='gif']"));
+        selectEl.innerHTML = '<option value="">Selecione um GIF</option>';
+        gifs.forEach((el) => {
+          const key = el.dataset.componentKey || el.dataset.componentId || "";
+          const option = document.createElement("option");
+          option.value = key;
+          option.textContent = `GIF ${key}`;
+          if (currentValue && currentValue === key) option.selected = true;
+          selectEl.appendChild(option);
+        });
+      }
+
+      function updatePropValue(propPath, input) {
+        if (!selectedComponent) return;
+        const props = parseProps(selectedComponent);
+        const parts = propPath.split(".");
+        let target = props;
+        for (let i = 0; i < parts.length - 1; i++) {
+          const key = parts[i];
+          target[key] = target[key] || {};
+          target = target[key];
+        }
+        const last = parts[parts.length - 1];
+        if (input.type === "checkbox") {
+          target[last] = input.checked;
+        } else if (input.type === "number") {
+          target[last] = input.value ? Number(input.value) : null;
+        } else {
+          target[last] = input.value;
+        }
+        props._key = props._key || selectedComponent.dataset.componentKey || uid();
+        writeProps(selectedComponent, props);
+        selectedComponent.dataset.componentProps = JSON.stringify(props);
+        syncDraftFromDom();
+        queueSave();
+      }
+
+      function updateProps(newProps) {
+        if (!selectedComponent) return;
+        const props = Object.assign({}, parseProps(selectedComponent), newProps);
+        props._key = props._key || selectedComponent.dataset.componentKey || uid();
+        selectedComponent.dataset.componentProps = JSON.stringify(props);
+        writeProps(selectedComponent, props);
+        syncDraftFromDom();
+        queueSave();
+      }
+
+      async function uploadFile(file) {
+        const formData = new FormData();
+        formData.append("file", file);
+        try {
+          const res = await fetch("/uploads/", { method: "POST", body: formData });
+          if (res.ok) {
+            return await res.json();
+          }
+        } catch (err) {
+          console.error("Upload falhou", err);
+        }
+        alert("Falha ao enviar arquivo.");
+        return null;
+      }
+
+      if (deleteComponentBtn) {
+        deleteComponentBtn.addEventListener("click", () => {
+          if (!selectedComponent) return;
+          const key = selectedComponent.dataset.componentKey;
+          selectedComponent.remove();
+          selectedComponent = null;
+          renderPropsPanel(null, {});
+          draftComponents = draftComponents.filter((c) => c.key !== key);
+          queueSave();
+        });
+      }
+
+      if (createScreenBtn) {
+        createScreenBtn.addEventListener("click", async () => {
+          const screens = await fetchScreens();
+          const nextOrder = screens.length ? Math.max(...screens.map((s) => s.order_index)) + 1 : 0;
+          const payload = {
+            order_index: nextOrder,
+            screen_type: "canvas",
+            animation_key: null,
+            components: [],
+          };
           try {
-            const newProps = JSON.parse(propsTextarea.value || "{}");
-            writeProps(selectedComponent, newProps);
+            const res = await fetch(`/scenarios/${scenarioId}/screens`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            });
+            if (res.ok) {
+              await refreshScreenList();
+              loadScreenByOrder(nextOrder);
+            }
           } catch (err) {
-            alert("JSON inválido nas props.");
+            console.error("Erro ao criar tela", err);
           }
         });
       }
 
-      screenButtons.forEach((btn) => {
-        btn.addEventListener("click", () => {
-          screenButtons.forEach((b) => b.classList.remove("active"));
-          btn.classList.add("active");
+      if (deleteScreenBtn) {
+        deleteScreenBtn.addEventListener("click", async () => {
+          const canvas = getCanvas();
+          if (!canvas) return;
+          const screenId = canvas.dataset.screenId;
+          if (!screenId) return;
+          if (!confirm("Excluir esta tela?")) return;
+          try {
+            const res = await fetch(`/scenario-screens/${screenId}`, { method: "DELETE" });
+            if (res.ok) {
+              await refreshScreenList();
+              loadScreenByOrder(0);
+            }
+          } catch (err) {
+            console.error("Erro ao excluir tela", err);
+          }
         });
-      });
+      }
 
-      document.addEventListener("htmx:afterSwap", (event) => {
-        if (event.target && event.target.id === "builder-canvas") {
-          initCanvas();
+      async function fetchScreens() {
+        try {
+          const res = await fetch(`/scenarios/${scenarioId}/screens`);
+          if (!res.ok) return [];
+          return await res.json();
+        } catch {
+          return [];
         }
-      });
+      }
 
+      async function refreshScreenList() {
+        const screens = await fetchScreens();
+        renderScreenButtons(screens);
+      }
+
+      function renderScreenButtons(screens) {
+        if (!screenListEl) return;
+        screenListEl.innerHTML = "";
+        if (!screens.length) {
+          screenListEl.innerHTML = '<p class="canvas-empty">Nenhuma tela cadastrada.</p>';
+          return;
+        }
+        screens
+          .sort((a, b) => a.order_index - b.order_index)
+          .forEach((screen, idx) => {
+            const btn = document.createElement("button");
+            btn.className = "builder-screen-btn";
+            btn.dataset.orderIndex = screen.order_index;
+            btn.textContent = `Tela ${idx + 1}  (#${screen.id})`;
+            btn.addEventListener("click", () => {
+              document.querySelectorAll(".builder-screen-btn").forEach((b) => b.classList.remove("active"));
+              btn.classList.add("active");
+              loadScreenByOrder(screen.order_index);
+            });
+            screenListEl.appendChild(btn);
+          });
+        const first = screenListEl.querySelector(".builder-screen-btn");
+        if (first) first.classList.add("active");
+      }
+
+      async function loadScreenByOrder(orderIndex) {
+        try {
+          const response = await fetch(`/ui/scenarios/${scenarioId}/builder/screens/${orderIndex}`);
+          if (!response.ok) return;
+          const html = await response.text();
+          canvasContainer.innerHTML = html.trim();
+          initCanvas();
+        } catch (err) {
+          console.error("Erro ao carregar tela", err);
+        }
+      }
+
+      function wireExistingScreenButtons() {
+        document.querySelectorAll(".builder-screen-btn").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            document.querySelectorAll(".builder-screen-btn").forEach((b) => b.classList.remove("active"));
+            btn.classList.add("active");
+            const order = Number(btn.dataset.orderIndex || 0);
+            loadScreenByOrder(order);
+          });
+        });
+      }
+
+      wireExistingScreenButtons();
       initCanvas();
+      refreshScreenList();
     })();
   </script>
 {% endblock %}

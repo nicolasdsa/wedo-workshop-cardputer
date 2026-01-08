@@ -8,6 +8,7 @@ from controllers.scenario_screen import (
     get_screen,
     list_screens_for_scenario,
     update_screen,
+    delete_screen,
 )
 from schemas.scenario_screen import ScenarioScreenCreate
 from core.dependencies import get_db
@@ -39,7 +40,7 @@ def list_screens_for_scenario_route(
 )
 def create_screens_for_scenario_route(
     scenario_id: int,
-    payload: list[ScenarioScreenCreate],
+    payload: list[ScenarioScreenCreate] | ScenarioScreenCreate,
     db: Session = Depends(get_db),
 ):
     return create_screens_for_scenario(scenario_id, payload, db)
@@ -55,3 +56,15 @@ def update_screen_route(
     db: Session = Depends(get_db),
 ):
     return update_screen(screen_id, payload, db)
+
+
+@router.delete(
+    "/scenario-screens/{screen_id}",
+    response_class=HTMLResponse,
+    status_code=204,
+)
+def delete_screen_route(
+    screen_id: int,
+    db: Session = Depends(get_db),
+):
+    return delete_screen(screen_id, db)

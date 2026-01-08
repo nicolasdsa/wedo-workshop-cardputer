@@ -10,6 +10,7 @@ from routers import (
     artist,
     scenario_screen,
     ui_artist,
+    upload,
 )
 
 __all__ = [
@@ -24,4 +25,5 @@ __all__ = [
     "artist",
     "scenario_screen",
     "ui_artist",
+    "upload",
 ]

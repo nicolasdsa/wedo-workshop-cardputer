@@ -30,11 +30,12 @@ def list_screens_for_scenario(scenario_id: int, db: Session):
 
 
 def create_screens_for_scenario(
-    scenario_id: int, screens: list[ScenarioScreenCreate], db: Session
+    scenario_id: int, screens: list[ScenarioScreenCreate] | ScenarioScreenCreate, db: Session
 ):
     scenario = scenario_service.get_scenario_by_id(db, scenario_id)
+    payload_list = screens if isinstance(screens, list) else [screens]
     created = scenario_screen_service.create_screens_for_scenario(
-        db=db, scenario=scenario, screens_data=[screen.model_dump() for screen in screens]
+        db=db, scenario=scenario, screens_data=[screen.model_dump() for screen in payload_list]
     )
     db.commit()
     for screen in created:
@@ -59,3 +60,8 @@ def update_screen(
     )
     data = ScenarioScreenRead.model_validate(updated).model_dump(mode="json")
     return HTMLResponse(content=json.dumps(data), status_code=200)
+
+
+def delete_screen(screen_id: int, db: Session):
+    scenario_screen_service.delete_screen(db=db, screen_id=screen_id)
+    return HTMLResponse(content="", status_code=204)

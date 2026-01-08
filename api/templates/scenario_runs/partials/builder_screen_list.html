@@ -1,0 +1,10 @@
+{% for screen in screens %}
+  <button class="builder-screen-btn{% if loop.index0 == 0 %} active{% endif %}"
+          data-order-index="{{ screen.order_index }}"
+          data-screen-id="{{ screen.id }}">
+    Tela {{ loop.index }} <small>#{{ screen.id }}</small>
+  </button>
+{% endfor %}
+{% if not screens %}
+  <p class="canvas-empty">Nenhuma tela cadastrada.</p>
+{% endif %}
