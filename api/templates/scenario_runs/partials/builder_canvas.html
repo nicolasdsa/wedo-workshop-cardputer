@@ -1,0 +1,14 @@
+<div class="builder-canvas canvas-screen"
+     data-screen-id="{{ screen.id }}"
+     data-screen-index="{{ index }}"
+     data-animation-key="{{ screen.animation_key or '' }}">
+  {% if screen.components %}
+    {% for component in screen.components %}
+      {% with builder_mode=True %}
+        {% include "scenario_runs/partials/components/component.html" %}
+      {% endwith %}
+    {% endfor %}
+  {% else %}
+    <div class="canvas-empty">Arraste um componente para começar.</div>
+  {% endif %}
+</div>

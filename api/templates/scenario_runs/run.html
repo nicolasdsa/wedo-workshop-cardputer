@@ -325,55 +325,65 @@
         if (btnNext) btnNext.disabled = currentIndex >= screens.length - 1;
       }
 
-      function setupGifButton(screenElement) {
-        const playButton = screenElement.querySelector(".screen-play-btn");
-        const gifImage = screenElement.querySelector(".screen-gif");
-        if (!playButton || !gifImage) return;
-
-        playButton.addEventListener("click", function () {
-          const gifPath = gifImage.dataset.gifPath;
-          if (!gifPath) return;
-          const isPlaying = gifImage.dataset.playing === "true";
-          if (isPlaying) {
-            gifImage.dataset.playing = "false";
-            gifImage.src = `/assets/images/${gifPath}`;
-            gifImage.classList.add("paused");
-          } else {
-            gifImage.dataset.playing = "true";
-            gifImage.src = `/assets/images/${gifPath}?t=${Date.now()}`;
-            gifImage.classList.remove("paused");
+      function parseComponentProps(componentEl, screenData) {
+        let props = {};
+        if (componentEl?.dataset?.componentProps) {
+          try {
+            props = JSON.parse(componentEl.dataset.componentProps);
+          } catch (err) {
+            props = {};
           }
-        });
+        }
+        if ((!props || Object.keys(props).length === 0) && screenData?.components?.length) {
+          const componentId = Number(componentEl?.dataset?.componentId);
+          const fromScreen = screenData.components.find((c) => c.id === componentId);
+          if (fromScreen && fromScreen.props) {
+            props = fromScreen.props;
+          }
+        }
+        return props || {};
       }
 
-      function setupSlider(screenElement, screenData) {
-        if (!screenElement || screenData?.screen_type !== "title_image_slider") return;
-        const images = screenData.slider_images || [];
-        const imagesWrapper = screenElement.querySelector(".screen-slider-images");
-        const captionEl = screenElement.querySelector(".screen-slider-caption");
-        const prevBtn = screenElement.querySelector(".slider-prev");
-        const nextBtn = screenElement.querySelector(".slider-next");
-        let idx = 0;
+      function setupGalleryComponent(componentEl, screenData) {
+        if (!componentEl) return;
+        const props = parseComponentProps(componentEl, screenData);
+        const items = props.items || [];
+        const stage = componentEl.querySelector(".gallery-stage");
+        const captionEl = componentEl.querySelector(".gallery-caption");
+        const prevBtn = componentEl.querySelector(".gallery-prev");
+        const nextBtn = componentEl.querySelector(".gallery-next");
+        const startIndex = Number(props.start_index ?? 0);
+        let idx = Math.min(
+          Number.isNaN(startIndex) ? 0 : startIndex,
+          Math.max(items.length - 1, 0)
+        );
 
-        function render(direction = "forward") {
-          if (!images.length || !imagesWrapper) return;
-          const current = images[idx];
+        if (!stage) return;
+        if (!items.length) {
+          if (prevBtn) prevBtn.disabled = true;
+          if (nextBtn) nextBtn.disabled = true;
+          return;
+        }
 
-          const oldActive = imagesWrapper.querySelector(".screen-slider-image.active");
-          // remove any leftover non-active images to avoid duplicates
-          imagesWrapper.querySelectorAll(".screen-slider-image:not(.active)").forEach((el) => el.remove());
+        stage.querySelectorAll(".media-placeholder").forEach((node) => node.remove());
+
+        function render() {
+          const oldActive = stage.querySelector(".gallery-image.active");
+          const current = items[idx];
           const nextImg = document.createElement("img");
-          nextImg.className = "screen-slider-image active slider-fade-in";
+          nextImg.className = "gallery-image active slider-fade-in";
           nextImg.src = `/assets/images/${current.image_path}`;
-          nextImg.alt = current.caption || screenData.title || "Slide";
-          imagesWrapper.appendChild(nextImg);
+          nextImg.alt = current.caption || "Slide";
+          stage.appendChild(nextImg);
 
           if (oldActive) {
             oldActive.classList.remove("active");
             oldActive.classList.add("slider-fade-out");
-            oldActive.addEventListener("animationend", () => {
-              oldActive.remove();
-            }, { once: true });
+            oldActive.addEventListener(
+              "animationend",
+              () => oldActive.remove(),
+              { once: true }
+            );
             setTimeout(() => {
               if (oldActive.isConnected) oldActive.remove();
             }, 600);
@@ -389,23 +399,24 @@
             }
           }
 
-          if (prevBtn) prevBtn.disabled = idx === 0;
-          if (nextBtn) nextBtn.disabled = idx >= images.length - 1;
+          if (prevBtn) prevBtn.disabled = idx <= 0;
+          if (nextBtn) nextBtn.disabled = idx >= items.length - 1;
+          componentEl.dataset.currentIndex = String(idx);
         }
 
         if (prevBtn) {
           prevBtn.addEventListener("click", function () {
             if (idx > 0) {
               idx -= 1;
-              render("backward");
+              render();
             }
           });
         }
         if (nextBtn) {
           nextBtn.addEventListener("click", function () {
-            if (idx < images.length - 1) {
+            if (idx < items.length - 1) {
               idx += 1;
-              render("forward");
+              render();
             }
           });
         }
@@ -413,9 +424,65 @@
         render();
       }
 
-      function attachScreenBehaviors(screenElement, screenData) {
-        setupGifButton(screenElement);
-        setupSlider(screenElement, screenData);
+      function setupGifComponent(componentEl, screenData) {
+        if (!componentEl) return;
+        const props = parseComponentProps(componentEl, screenData);
+        if (!props.show_controls) return;
+        const toggle = componentEl.querySelector(".gif-toggle");
+        const gifImage = componentEl.querySelector(".gif-image");
+        if (!toggle || !gifImage) return;
+        const gifPath = gifImage.dataset.gifSrc;
+        if (!gifPath) return;
+        gifImage.dataset.playing = "true";
+
+        toggle.addEventListener("click", function () {
+          const isPlaying = gifImage.dataset.playing === "true";
+          if (isPlaying) {
+            gifImage.dataset.playing = "false";
+            gifImage.src = `/assets/images/${gifPath}`;
+            gifImage.classList.add("paused");
+          } else {
+            gifImage.dataset.playing = "true";
+            gifImage.src = `/assets/images/${gifPath}?t=${Date.now()}`;
+            gifImage.classList.remove("paused");
+          }
+        });
+      }
+
+      function setupButtonComponent(componentEl, screenIndex) {
+        if (!componentEl) return;
+        const actionType = componentEl.dataset.buttonAction || "next";
+        const targetIndexAttr = componentEl.dataset.targetIndex;
+
+        componentEl.addEventListener("click", function () {
+          if (actionType === "goto" && targetIndexAttr !== undefined && targetIndexAttr !== "") {
+            const targetIdx = Number(targetIndexAttr);
+            if (!Number.isNaN(targetIdx)) {
+              loadScreen(targetIdx);
+            }
+            return;
+          }
+          if (actionType === "next") {
+            loadScreen(screenIndex + 1);
+          }
+        });
+      }
+
+      function attachScreenBehaviors(screenElement, screenData, screenIndex) {
+        if (!screenElement || !screenData) return;
+        const components = Array.from(
+          screenElement.querySelectorAll(".canvas-component")
+        );
+        components.forEach((componentEl) => {
+          const type = componentEl.dataset.componentType;
+          if (type === "gallery") {
+            setupGalleryComponent(componentEl, screenData);
+          } else if (type === "gif") {
+            setupGifComponent(componentEl, screenData);
+          } else if (type === "button") {
+            setupButtonComponent(componentEl, screenIndex);
+          }
+        });
       }
 
       async function loadScreen(index) {
@@ -437,7 +504,7 @@
           if (!nextElement) return;
 
           screenContainer.appendChild(nextElement);
-          attachScreenBehaviors(nextElement, screens[index]);
+          attachScreenBehaviors(nextElement, screens[index], index);
           screenContainer.dataset.currentIndex = String(index);
           updateIndicator(index);
           updateNavButtons(index);
@@ -467,7 +534,7 @@
 
       if (screenContainer && screens.length) {
         const initialScreen = screenContainer.querySelector(".scenario-screen");
-        attachScreenBehaviors(initialScreen, screens[0]);
+        attachScreenBehaviors(initialScreen, screens[0], 0);
         updateIndicator(0);
         updateNavButtons(0);
       }

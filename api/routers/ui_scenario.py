@@ -22,8 +22,20 @@ def run_scenario_page(scenario_id: int, request: Request, db: Session = Depends(
     return ui_scenario.run_scenario_page(scenario_id, request, db)
 
 
+@router.get("/{scenario_id}/builder", response_class=HTMLResponse)
+def builder_page(scenario_id: int, request: Request, db: Session = Depends(get_db)):
+    return ui_scenario.scenario_builder_page(scenario_id, request, db)
+
+
 @router.get("/{scenario_id}/screens/{index}", response_class=HTMLResponse)
 def scenario_screen_partial(
     scenario_id: int, index: int, request: Request, db: Session = Depends(get_db)
 ):
     return ui_scenario.scenario_screen_partial(scenario_id, index, request, db)
+
+
+@router.get("/{scenario_id}/builder/screens/{index}", response_class=HTMLResponse)
+def scenario_builder_screen_partial(
+    scenario_id: int, index: int, request: Request, db: Session = Depends(get_db)
+):
+    return ui_scenario.builder_screen_partial(scenario_id, index, request, db)

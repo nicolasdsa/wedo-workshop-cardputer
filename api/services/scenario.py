@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from typing import Sequence
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from core.exceptions import NotFoundError
+from models.scenario_screen import ScenarioScreen
 from services.scenario_screen import create_screens_for_scenario
 from models.scenario import Scenario
 from models.scenario_step import ScenarioStep
@@ -92,6 +93,21 @@ def delete_scenario(db: Session, scenario_id: int) -> None:
 
 def get_scenario_with_steps(db: Session, scenario_id: int) -> Scenario:
     scenario = db.query(Scenario).filter(Scenario.id == scenario_id).first()
+    if not scenario:
+        raise NotFoundError("Cenário não encontrado.")
+    return scenario
+
+
+def get_scenario_with_screens(db: Session, scenario_id: int) -> Scenario:
+    scenario = (
+        db.query(Scenario)
+        .options(
+            selectinload(Scenario.screens).selectinload(ScenarioScreen.components),
+            selectinload(Scenario.screens).selectinload(ScenarioScreen.slider_images),
+        )
+        .filter(Scenario.id == scenario_id)
+        .first()
+    )
     if not scenario:
         raise NotFoundError("Cenário não encontrado.")
     return scenario

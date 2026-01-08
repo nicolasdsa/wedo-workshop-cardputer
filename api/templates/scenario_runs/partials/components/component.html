@@ -1,0 +1,80 @@
+{% set builder_mode = builder_mode | default(False) %}
+{% set props = component.props or {} %}
+{% set style_parts = [
+  "left: " ~ (component.x or 0) ~ "%;",
+  "top: " ~ (component.y or 0) ~ "%;",
+  "width: " ~ (component.w or 100) ~ "%;",
+  "height: " ~ (component.h or 100) ~ "%;",
+  "z-index: " ~ (component.z_index or 0) ~ ";",
+] %}
+{% if component.rotate %}
+  {% set style_parts = style_parts + ["transform: rotate(" ~ component.rotate ~ "deg);"] %}
+{% endif %}
+
+<div class="canvas-component{% if builder_mode %} builder-component{% endif %}"
+     data-component-id="{{ component.id }}"
+     data-component-type="{{ component.component_type }}"
+     data-component-props='{{ props | tojson | safe }}'
+     style="{{ ' '.join(style_parts) }}">
+  {% if component.component_type == "text" %}
+    {% set text = props.get("text") if props else "" %}
+    {% set variant = props.get("variant", "body") if props else "body" %}
+    <div class="text-component text-{{ variant }}">
+      {{ text }}
+    </div>
+  {% elif component.component_type == "image" %}
+    {% set src = props.get("src") if props else None %}
+    <div class="media-frame image-component">
+      {% if src %}
+        <img src="/assets/images/{{ src }}" alt="{{ props.get('alt', 'Imagem') if props else 'Imagem' }}" />
+      {% else %}
+        <div class="media-placeholder">Imagem não configurada</div>
+      {% endif %}
+    </div>
+  {% elif component.component_type == "gif" %}
+    {% set src = props.get("src") if props else None %}
+    {% set show_controls = props.get("show_controls") if props else False %}
+    <div class="media-frame gif-component" data-has-controls="{{ 'true' if show_controls else 'false' }}">
+      {% if src %}
+        <img src="/assets/images/{{ src }}" alt="GIF" class="gif-image" data-gif-src="{{ src }}" />
+        {% if show_controls %}
+          <button type="button" class="gif-toggle">Play/Pause</button>
+        {% endif %}
+      {% else %}
+        <div class="media-placeholder">GIF não configurado</div>
+      {% endif %}
+    </div>
+  {% elif component.component_type == "gallery" %}
+    {% set items = props.get("items", []) if props else [] %}
+    <div class="gallery-component" data-current-index="{{ props.get('start_index', 0) if props else 0 }}">
+      <div class="gallery-stage">
+        {% if items %}
+          <img src="/assets/images/{{ items[0].image_path }}" alt="{{ items[0].caption or 'Imagem' }}" class="gallery-image active" />
+        {% else %}
+          <div class="media-placeholder">Galeria vazia</div>
+        {% endif %}
+      </div>
+      <div class="gallery-caption" {% if not items or not items[0].caption %}style="display: none"{% endif %}>
+        {{ items[0].caption if items else "" }}
+      </div>
+      <div class="gallery-controls">
+        <button type="button" class="gallery-prev">◀</button>
+        <button type="button" class="gallery-next">▶</button>
+      </div>
+    </div>
+  {% elif component.component_type == "button" %}
+    {% set label = props.get("label", "Próximo") if props else "Próximo" %}
+    {% set action = props.get("action", {}) if props else {} %}
+    <button type="button"
+            class="canvas-button"
+            data-button-action="{{ action.get('type', 'next') }}"
+            {% if action.get('target_index') is not none %}data-target-index="{{ action.get('target_index') }}"{% endif %}>
+      {{ label }}
+    </button>
+  {% else %}
+    <div class="canvas-unknown">Componente {{ component.component_type }} não suportado.</div>
+  {% endif %}
+  {% if builder_mode %}
+    <div class="component-handle handle-se" title="Redimensionar"></div>
+  {% endif %}
+</div>

@@ -8,6 +8,7 @@ from models.artist import Artist
 from models.artist_timeline_entry import ArtistTimelineEntry
 from models.scenario_screen import ScenarioScreen
 from models.scenario_screen_slider_image import ScenarioScreenSliderImage
+from models.scenario_screen_component import ScenarioScreenComponent
 
 __all__ = [
     "Instrument",
@@ -20,4 +21,5 @@ __all__ = [
     "ArtistTimelineEntry",
     "ScenarioScreen",
     "ScenarioScreenSliderImage",
+    "ScenarioScreenComponent",
 ]

@@ -1,0 +1,52 @@
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: #0f1a10;
+  color: #fff;
+  padding: 0.75rem 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.header-icon {
+  font-size: 1.4rem;
+}
+
+.header-title {
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 700;
+  font-size: 24px;
+  letter-spacing: 0.5px;
+}
+
+.header-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.header-icon-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: #2f4f2e;
+  color: #fff;
+  border: 1px solid #2f4f2e;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+main {
+  padding: 1.5rem;
+  background: #1a2c18;
+  min-height: 100vh;
+}

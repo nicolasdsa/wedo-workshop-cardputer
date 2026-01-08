@@ -6,8 +6,9 @@ from sqlalchemy.orm import Session
 
 from core.exceptions import NotFoundError
 from models.scenario import Scenario
-from models.scenario_screen import ScenarioScreen
+from models.scenario_screen import ScenarioScreen, ScenarioScreenType
 from models.scenario_screen_slider_image import ScenarioScreenSliderImage
+from models.scenario_screen_component import ScenarioScreenComponent
 
 
 def create_screens_for_scenario(
@@ -17,21 +18,35 @@ def create_screens_for_scenario(
     commit: bool = False,
 ) -> list[ScenarioScreen]:
     created: list[ScenarioScreen] = []
+
+    def _get_value(item, key, default=None):
+        if isinstance(item, dict):
+            return item.get(key, default)
+        return getattr(item, key, default)
+
+    def _z_index(item, default=0):
+        try:
+            value = _get_value(item, "z_index", default)
+            return int(value) if value is not None else default
+        except (TypeError, ValueError):
+            return default
+
     for screen_data in sorted(
         screens_data,
         key=lambda s: s.get("order_index", 0) if isinstance(s, dict) else getattr(s, "order_index", 0),
     ):
-        slider_images = screen_data.get("slider_images") if isinstance(screen_data, dict) else getattr(screen_data, "slider_images", None)
+        slider_images = _get_value(screen_data, "slider_images")
+        components_data = _get_value(screen_data, "components") or []
         screen = ScenarioScreen(
             scenario_id=scenario.id,
-            order_index=screen_data["order_index"] if isinstance(screen_data, dict) else screen_data.order_index,
-            screen_type=screen_data["screen_type"] if isinstance(screen_data, dict) else screen_data.screen_type,
-            title=screen_data.get("title") if isinstance(screen_data, dict) else screen_data.title,
-            body_text=screen_data.get("body_text") if isinstance(screen_data, dict) else screen_data.body_text,
-            image_path=screen_data.get("image_path") if isinstance(screen_data, dict) else screen_data.image_path,
-            gif_path=screen_data.get("gif_path") if isinstance(screen_data, dict) else screen_data.gif_path,
-            button_label=screen_data.get("button_label") if isinstance(screen_data, dict) else screen_data.button_label,
-            animation_key=screen_data.get("animation_key") if isinstance(screen_data, dict) else screen_data.animation_key,
+            order_index=_get_value(screen_data, "order_index", 0),
+            screen_type=_get_value(screen_data, "screen_type", ScenarioScreenType.CANVAS) or ScenarioScreenType.CANVAS,
+            title=_get_value(screen_data, "title"),
+            body_text=_get_value(screen_data, "body_text"),
+            image_path=_get_value(screen_data, "image_path"),
+            gif_path=_get_value(screen_data, "gif_path"),
+            button_label=_get_value(screen_data, "button_label"),
+            animation_key=_get_value(screen_data, "animation_key"),
         )
         db.add(screen)
         db.flush()
@@ -47,6 +62,28 @@ def create_screens_for_scenario(
                         order_index=image_data["order_index"] if isinstance(image_data, dict) else image_data.order_index,
                         image_path=image_data["image_path"] if isinstance(image_data, dict) else image_data.image_path,
                         caption=image_data.get("caption") if isinstance(image_data, dict) else image_data.caption,
+                    )
+                )
+
+        if components_data:
+            for idx, component_data in enumerate(
+                sorted(
+                    components_data,
+                    key=lambda c: _z_index(c),  # type: ignore
+                )
+            ):
+                z_value = _get_value(component_data, "z_index")
+                screen.components.append(
+                    ScenarioScreenComponent(
+                        screen_id=screen.id,
+                        component_type=_get_value(component_data, "component_type"),
+                        z_index=z_value if z_value is not None else idx,
+                        x=float(_get_value(component_data, "x", 0.0)),
+                        y=float(_get_value(component_data, "y", 0.0)),
+                        w=float(_get_value(component_data, "w", 0.0)),
+                        h=float(_get_value(component_data, "h", 0.0)),
+                        rotate=_get_value(component_data, "rotate"),
+                        props=_get_value(component_data, "props"),
                     )
                 )
 
@@ -73,4 +110,48 @@ def get_screen(db: Session, screen_id: int) -> ScenarioScreen:
     screen = db.get(ScenarioScreen, screen_id)
     if not screen:
         raise NotFoundError("Tela de cenário não encontrada.")
+    return screen
+
+
+def update_screen_components(
+    db: Session, screen_id: int, components: Sequence[dict], animation_key: str | None = None
+) -> ScenarioScreen:
+    screen = get_screen(db, screen_id)
+    if animation_key is not None:
+        screen.animation_key = animation_key
+    screen.components.clear()
+
+    def _get_value(item, key, default=None):
+        if isinstance(item, dict):
+            return item.get(key, default)
+        return getattr(item, key, default)
+
+    def _z_index(item, default=0):
+        try:
+            value = _get_value(item, "z_index", default)
+            return int(value) if value is not None else default
+        except (TypeError, ValueError):
+            return default
+
+    for idx, comp in enumerate(
+        sorted(components, key=lambda c: _z_index(c))  # type: ignore
+    ):
+        z_value = _get_value(comp, "z_index")
+        screen.components.append(
+            ScenarioScreenComponent(
+                screen_id=screen.id,
+                component_type=_get_value(comp, "component_type"),
+                z_index=z_value if z_value is not None else idx,
+                x=float(_get_value(comp, "x", 0.0)),
+                y=float(_get_value(comp, "y", 0.0)),
+                w=float(_get_value(comp, "w", 0.0)),
+                h=float(_get_value(comp, "h", 0.0)),
+                rotate=_get_value(comp, "rotate"),
+                props=_get_value(comp, "props"),
+            )
+        )
+
+    db.add(screen)
+    db.commit()
+    db.refresh(screen)
     return screen

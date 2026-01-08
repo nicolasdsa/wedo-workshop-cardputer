@@ -1,53 +1,12 @@
-<div class="scenario-screen"
+<div class="scenario-screen canvas-screen"
      data-screen-id="{{ screen.id }}"
      data-screen-type="{{ screen.screen_type }}"
      data-animation-key="{{ screen.animation_key or '' }}">
-
-  {% if screen.screen_type == "title_image_text" %}
-    <h2>{{ screen.title }}</h2>
-    {% if screen.image_path %}
-      <img src="/assets/images/{{ screen.image_path }}" alt="{{ screen.title }}" class="screen-image" />
-    {% endif %}
-    {% if screen.body_text %}
-      <p>{{ screen.body_text }}</p>
-    {% endif %}
-
-  {% elif screen.screen_type == "text_gif_button" %}
-    {% if screen.body_text %}
-      <p>{{ screen.body_text }}</p>
-    {% endif %}
-    {% if screen.gif_path %}
-      <img src="/assets/images/{{ screen.gif_path }}"
-           alt="Animação"
-           class="screen-gif paused"
-           data-gif-path="{{ screen.gif_path }}" />
-    {% endif %}
-    {% if screen.button_label %}
-      <button type="button" class="screen-play-btn">
-        {{ screen.button_label }}
-      </button>
-    {% endif %}
-
-  {% elif screen.screen_type == "title_image_slider" %}
-    <h2>{{ screen.title }}</h2>
-    <div class="screen-slider" data-screen-id="{{ screen.id }}">
-      <div class="screen-slider-images">
-        {% if screen.slider_images %}
-          <img src="/assets/images/{{ screen.slider_images[0].image_path }}"
-               alt="{{ screen.slider_images[0].caption or screen.title }}"
-               class="screen-slider-image active" />
-        {% else %}
-          <div class="screen-slider-placeholder">Não há imagens cadastradas para este slider.</div>
-        {% endif %}
-      </div>
-      {% if screen.slider_images and screen.slider_images[0].caption %}
-        <p class="screen-slider-caption">{{ screen.slider_images[0].caption }}</p>
-      {% endif %}
-      <div class="screen-slider-controls">
-        <button type="button" class="slider-prev">◀</button>
-        <button type="button" class="slider-next">▶</button>
-      </div>
-    </div>
+  {% if screen.components %}
+    {% for component in screen.components %}
+      {% include "scenario_runs/partials/components/component.html" %}
+    {% endfor %}
+  {% else %}
+    <div class="canvas-empty">Nenhum componente configurado para esta tela.</div>
   {% endif %}
-
 </div>

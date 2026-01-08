@@ -5,7 +5,13 @@ import json
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
-from schemas.scenario_screen import ScenarioScreenCreate, ScenarioScreenRead
+from pydantic import BaseModel, Field
+
+from schemas.scenario_screen import (
+    ScenarioScreenComponentCreate,
+    ScenarioScreenCreate,
+    ScenarioScreenRead,
+)
 from services import scenario as scenario_service
 from services import scenario_screen as scenario_screen_service
 
@@ -35,3 +41,21 @@ def create_screens_for_scenario(
         db.refresh(screen)
     data = [ScenarioScreenRead.model_validate(item).model_dump(mode="json") for item in created]
     return HTMLResponse(content=json.dumps(data), status_code=201)
+
+
+class ScenarioScreenUpdatePayload(BaseModel):
+    components: list[ScenarioScreenComponentCreate] = Field(default_factory=list)
+    animation_key: str | None = None
+
+
+def update_screen(
+    screen_id: int, payload: ScenarioScreenUpdatePayload, db: Session
+):
+    updated = scenario_screen_service.update_screen_components(
+        db=db,
+        screen_id=screen_id,
+        components=[component.model_dump() for component in payload.components],
+        animation_key=payload.animation_key,
+    )
+    data = ScenarioScreenRead.model_validate(updated).model_dump(mode="json")
+    return HTMLResponse(content=json.dumps(data), status_code=200)

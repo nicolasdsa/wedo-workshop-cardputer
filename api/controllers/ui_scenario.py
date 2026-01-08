@@ -30,7 +30,7 @@ def list_scenarios_page(request: Request, db: Session = Depends(get_db)) -> HTML
 def run_scenario_page(
     scenario_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
-    scenario = scenario_service.get_scenario_by_id(db, scenario_id)
+    scenario = scenario_service.get_scenario_with_screens(db, scenario_id)
     screens = list(scenario.screens) if scenario.screens else []
     screens_json = json.dumps(
         [ScenarioScreenRead.model_validate(screen).model_dump(mode="json") for screen in screens]
@@ -64,7 +64,7 @@ def run_scenario_page(
 def scenario_screen_partial(
     scenario_id: int, index: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
-    scenario = scenario_service.get_scenario_by_id(db, scenario_id)
+    scenario = scenario_service.get_scenario_with_screens(db, scenario_id)
     screens = list(scenario.screens) if scenario.screens else []
     if index < 0 or index >= len(screens):
         return HTMLResponse(content="Tela não encontrada.", status_code=404)
@@ -72,4 +72,35 @@ def scenario_screen_partial(
     return templates.TemplateResponse(
         "scenario_runs/partials/screen.html",
         {"request": request, "screen": screen},
+    )
+
+
+def scenario_builder_page(
+    scenario_id: int, request: Request, db: Session = Depends(get_db)
+) -> HTMLResponse:
+    scenario = scenario_service.get_scenario_with_screens(db, scenario_id)
+    screens = list(scenario.screens) if scenario.screens else []
+    initial_screen = screens[0] if screens else None
+    return templates.TemplateResponse(
+        "scenario_runs/builder.html",
+        {
+            "request": request,
+            "scenario": scenario,
+            "screens": screens,
+            "initial_screen": initial_screen,
+        },
+    )
+
+
+def builder_screen_partial(
+    scenario_id: int, index: int, request: Request, db: Session = Depends(get_db)
+) -> HTMLResponse:
+    scenario = scenario_service.get_scenario_with_screens(db, scenario_id)
+    screens = list(scenario.screens) if scenario.screens else []
+    if index < 0 or index >= len(screens):
+        return HTMLResponse(content="Tela não encontrada.", status_code=404)
+    screen = screens[index]
+    return templates.TemplateResponse(
+        "scenario_runs/partials/builder_canvas.html",
+        {"request": request, "screen": screen, "index": index},
     )

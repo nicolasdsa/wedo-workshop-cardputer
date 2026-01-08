@@ -1,0 +1,379 @@
+{% extends "base.html" %}
+
+{% block title %}Builder de Cenário{% endblock %}
+
+{% block content %}
+  <section class="builder-header">
+    <h2>Canvas de componentes - {{ scenario.title }}</h2>
+    <p>Arraste e redimensione os blocos para montar as telas. Clique em Salvar para persistir.</p>
+  </section>
+
+  <section class="builder-layout">
+    <aside class="builder-sidebar">
+      <h3>Telas</h3>
+      <div class="builder-screen-list">
+        {% for screen in screens %}
+          <button class="builder-screen-btn{% if loop.index0 == 0 %} active{% endif %}"
+                  data-index="{{ loop.index0 }}"
+                  hx-get="/ui/scenarios/{{ scenario.id }}/builder/screens/{{ loop.index0 }}"
+                  hx-target="#builder-canvas"
+                  hx-swap="innerHTML">
+            Tela {{ loop.index }} <small>#{{ screen.id }}</small>
+          </button>
+        {% endfor %}
+        {% if not screens %}
+          <p class="canvas-empty">Nenhuma tela cadastrada.</p>
+        {% endif %}
+      </div>
+
+      <div class="builder-palette">
+        <h4>Paleta</h4>
+        <div class="palette-grid">
+          <button type="button" class="palette-btn" data-component-type="text">Texto</button>
+          <button type="button" class="palette-btn" data-component-type="image">Imagem</button>
+          <button type="button" class="palette-btn" data-component-type="gallery">Galeria</button>
+          <button type="button" class="palette-btn" data-component-type="gif">GIF</button>
+          <button type="button" class="palette-btn" data-component-type="button">Botão</button>
+        </div>
+      </div>
+
+      <div class="builder-actions">
+        <button id="builder-save" type="button">Salvar tela</button>
+      </div>
+    </aside>
+
+    <section class="builder-main">
+      <div class="builder-toolbar">
+        <label for="animation-key-input">Animação entre telas</label>
+        <input type="text"
+               id="animation-key-input"
+               placeholder="ex.: animatecss:fadeInRight:fadeOutLeft"
+               value="{{ initial_screen.animation_key if initial_screen else '' }}" />
+      </div>
+
+      <div id="builder-canvas">
+        {% if initial_screen %}
+          {% with screen=initial_screen, index=0 %}
+            {% include "scenario_runs/partials/builder_canvas.html" %}
+          {% endwith %}
+        {% else %}
+          <div class="canvas-empty">Crie uma tela para começar.</div>
+        {% endif %}
+      </div>
+
+      <div class="builder-props">
+        <div class="builder-props-header">
+          <h4>Propriedades do componente</h4>
+          <span class="props-hint">Edite em JSON simples (props)</span>
+        </div>
+        <textarea id="component-props" rows="6" placeholder='{"text": "Conteúdo", "variant": "body"}'></textarea>
+        <button type="button" id="apply-props">Aplicar props</button>
+      </div>
+    </section>
+  </section>
+
+  <script>
+    (function () {
+      const canvasContainer = document.getElementById("builder-canvas");
+      const paletteButtons = document.querySelectorAll(".palette-btn");
+      const saveButton = document.getElementById("builder-save");
+      const propsTextarea = document.getElementById("component-props");
+      const applyPropsButton = document.getElementById("apply-props");
+      const animationInput = document.getElementById("animation-key-input");
+      const screenButtons = document.querySelectorAll(".builder-screen-btn");
+      const defaultProps = {
+        text: { text: "Novo texto", variant: "body" },
+        image: { src: "", alt: "Imagem" },
+        gallery: { items: [], start_index: 0 },
+        gif: { src: "", show_controls: true },
+        button: { label: "Próximo", action: { type: "next" } },
+      };
+      const defaultSizes = {
+        text: { w: 60, h: 18 },
+        image: { w: 38, h: 32 },
+        gallery: { w: 50, h: 38 },
+        gif: { w: 40, h: 30 },
+        button: { w: 18, h: 10 },
+      };
+
+      let selectedComponent = null;
+      let currentScreenId = null;
+
+      function getCanvas() {
+        return canvasContainer?.querySelector(".builder-canvas");
+      }
+
+      function parseProps(el) {
+        try {
+          const parsed = JSON.parse(el.dataset.componentProps || "{}");
+          return parsed || {};
+        } catch (err) {
+          return {};
+        }
+      }
+
+      function writeProps(el, props) {
+        el.dataset.componentProps = JSON.stringify(props || {});
+        const type = el.dataset.componentType;
+        if (type === "text") {
+          const textEl = el.querySelector(".text-component");
+          if (textEl) textEl.textContent = props.text || "";
+        } else if (type === "button") {
+          const btn = el.querySelector(".canvas-button");
+          if (btn) {
+            btn.textContent = props.label || "Próximo";
+            btn.dataset.buttonAction = props.action?.type || "next";
+            if (props.action && props.action.target_index !== undefined) {
+              btn.dataset.targetIndex = props.action.target_index;
+            } else {
+              btn.removeAttribute("data-target-index");
+            }
+          }
+        } else if (type === "image" || type === "gif") {
+          const img = el.querySelector("img");
+          if (img && props.src) {
+            img.src = `/assets/images/${props.src}`;
+            img.dataset.gifSrc = props.src;
+          }
+        } else if (type === "gallery") {
+          const caption = el.querySelector(".gallery-caption");
+          if (caption) caption.textContent = props.items?.[0]?.caption || "";
+        }
+      }
+
+      function selectComponent(el) {
+        document.querySelectorAll(".builder-component.selected").forEach((node) => {
+          node.classList.remove("selected");
+        });
+        selectedComponent = el;
+        if (selectedComponent) {
+          selectedComponent.classList.add("selected");
+          const props = parseProps(selectedComponent);
+          if (propsTextarea) {
+            propsTextarea.value = JSON.stringify(props, null, 2);
+          }
+        } else if (propsTextarea) {
+          propsTextarea.value = "";
+        }
+      }
+
+      function startDrag(event, el) {
+        event.preventDefault();
+        const canvas = getCanvas();
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        const startX = event.clientX;
+        const startY = event.clientY;
+        const startLeft = parseFloat(el.style.left) || 0;
+        const startTop = parseFloat(el.style.top) || 0;
+        const width = parseFloat(el.style.width) || 0;
+        const height = parseFloat(el.style.height) || 0;
+
+        function onMove(ev) {
+          const dx = ev.clientX - startX;
+          const dy = ev.clientY - startY;
+          const nextLeft = Math.min(Math.max(startLeft + (dx / rect.width) * 100, 0), 100 - width);
+          const nextTop = Math.min(Math.max(startTop + (dy / rect.height) * 100, 0), 100 - height);
+          el.style.left = `${nextLeft}%`;
+          el.style.top = `${nextTop}%`;
+        }
+
+        function onUp() {
+          window.removeEventListener("pointermove", onMove);
+          window.removeEventListener("pointerup", onUp);
+        }
+
+        window.addEventListener("pointermove", onMove);
+        window.addEventListener("pointerup", onUp);
+      }
+
+      function startResize(event, el) {
+        event.preventDefault();
+        const canvas = getCanvas();
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        const startX = event.clientX;
+        const startY = event.clientY;
+        const startW = parseFloat(el.style.width) || 10;
+        const startH = parseFloat(el.style.height) || 10;
+
+        function onMove(ev) {
+          const dx = ev.clientX - startX;
+          const dy = ev.clientY - startY;
+          const nextW = Math.min(Math.max(startW + (dx / rect.width) * 100, 5), 100);
+          const nextH = Math.min(Math.max(startH + (dy / rect.height) * 100, 5), 100);
+          el.style.width = `${nextW}%`;
+          el.style.height = `${nextH}%`;
+        }
+
+        function onUp() {
+          window.removeEventListener("pointermove", onMove);
+          window.removeEventListener("pointerup", onUp);
+        }
+
+        window.addEventListener("pointermove", onMove);
+        window.addEventListener("pointerup", onUp);
+      }
+
+      function setupComponent(el) {
+        el.addEventListener("pointerdown", (event) => {
+          const target = event.target;
+          if (target && target.classList && target.classList.contains("component-handle")) return;
+          startDrag(event, el);
+          selectComponent(el);
+        });
+        const handle = el.querySelector(".component-handle");
+        if (handle) {
+          handle.addEventListener("pointerdown", (event) => {
+            event.stopPropagation();
+            startResize(event, el);
+          });
+        }
+        el.addEventListener("click", () => selectComponent(el));
+      }
+
+      function renderComponentInner(type, props) {
+        if (type === "text") {
+          return `<div class="text-component text-${props.variant || "body"}">${props.text || ""}</div>`;
+        }
+        if (type === "button") {
+          const targetAttr = props.action && props.action.target_index !== undefined
+            ? ` data-target-index="${props.action.target_index}"`
+            : "";
+          return `<button type="button" class="canvas-button" data-button-action="${props.action?.type || "next"}"${targetAttr}>${props.label || "Próximo"}</button>`;
+        }
+        if (type === "image") {
+          return `<div class="media-frame image-component">${props.src ? `<img src="/assets/images/${props.src}" alt="${props.alt || "Imagem"}" />` : `<div class="media-placeholder">Imagem</div>`}</div>`;
+        }
+        if (type === "gif") {
+          return `<div class="media-frame gif-component"><img class="gif-image" data-gif-src="${props.src || ""}" src="${props.src ? "/assets/images/" + props.src : ""}" alt="GIF" /></div>`;
+        }
+        if (type === "gallery") {
+          return `<div class="gallery-component"><div class="gallery-stage">${(props.items && props.items[0]?.image_path) ? `<img class="gallery-image active" src="/assets/images/${props.items[0].image_path}" alt="${props.items[0].caption || ""}" />` : `<div class="media-placeholder">Galeria</div>`}</div><div class="gallery-caption">${props.items?.[0]?.caption || ""}</div><div class="gallery-controls"><button type="button" class="gallery-prev">◀</button><button type="button" class="gallery-next">▶</button></div></div>`;
+        }
+        return `<div class="canvas-unknown">Componente</div>`;
+      }
+
+      function addComponent(type) {
+        const canvas = getCanvas();
+        if (!canvas) return;
+        const props = JSON.parse(JSON.stringify(defaultProps[type] || {}));
+        const size = defaultSizes[type] || { w: 30, h: 20 };
+        const el = document.createElement("div");
+        el.className = "canvas-component builder-component";
+        el.dataset.componentType = type;
+        el.dataset.componentProps = JSON.stringify(props);
+        el.style.left = "8%";
+        el.style.top = "8%";
+        el.style.width = `${size.w}%`;
+        el.style.height = `${size.h}%`;
+        el.style.zIndex = `${canvas.querySelectorAll(".builder-component").length}`;
+        el.innerHTML = `${renderComponentInner(type, props)}<div class="component-handle handle-se" title="Redimensionar"></div>`;
+        canvas.appendChild(el);
+        setupComponent(el);
+        selectComponent(el);
+      }
+
+      function refreshAnimationInput() {
+        const canvas = getCanvas();
+        if (!canvas || !animationInput) return;
+        animationInput.value = canvas.dataset.animationKey || "";
+        currentScreenId = Number(canvas.dataset.screenId);
+      }
+
+      function initCanvas() {
+        const canvas = getCanvas();
+        if (!canvas) {
+          currentScreenId = null;
+          return;
+        }
+        currentScreenId = Number(canvas.dataset.screenId);
+        canvas.querySelectorAll(".builder-component").forEach((el) => setupComponent(el));
+        refreshAnimationInput();
+        const first = canvas.querySelector(".builder-component");
+        if (first) selectComponent(first);
+      }
+
+      function collectComponents() {
+        const canvas = getCanvas();
+        if (!canvas) return [];
+        return Array.from(canvas.querySelectorAll(".builder-component")).map((el, idx) => {
+          const props = parseProps(el);
+          return {
+            component_type: el.dataset.componentType,
+            x: parseFloat(el.style.left) || 0,
+            y: parseFloat(el.style.top) || 0,
+            w: parseFloat(el.style.width) || 0,
+            h: parseFloat(el.style.height) || 0,
+            rotate: null,
+            z_index: idx,
+            props: props || {},
+          };
+        });
+      }
+
+      async function saveScreen() {
+        const canvas = getCanvas();
+        if (!canvas || !currentScreenId) return;
+        const payload = {
+          animation_key: animationInput?.value || null,
+          components: collectComponents(),
+        };
+        try {
+          const response = await fetch(`/scenario-screens/${currentScreenId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          if (response.ok) {
+            alert("Tela salva com sucesso!");
+          } else {
+            alert("Erro ao salvar a tela.");
+          }
+        } catch (err) {
+          alert("Erro ao salvar a tela.");
+        }
+      }
+
+      paletteButtons.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const type = btn.dataset.componentType;
+          if (type) addComponent(type);
+        });
+      });
+
+      if (saveButton) {
+        saveButton.addEventListener("click", () => {
+          saveScreen();
+        });
+      }
+
+      if (applyPropsButton) {
+        applyPropsButton.addEventListener("click", () => {
+          if (!selectedComponent || !propsTextarea) return;
+          try {
+            const newProps = JSON.parse(propsTextarea.value || "{}");
+            writeProps(selectedComponent, newProps);
+          } catch (err) {
+            alert("JSON inválido nas props.");
+          }
+        });
+      }
+
+      screenButtons.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          screenButtons.forEach((b) => b.classList.remove("active"));
+          btn.classList.add("active");
+        });
+      });
+
+      document.addEventListener("htmx:afterSwap", (event) => {
+        if (event.target && event.target.id === "builder-canvas") {
+          initCanvas();
+        }
+      });
+
+      initCanvas();
+    })();
+  </script>
+{% endblock %}
