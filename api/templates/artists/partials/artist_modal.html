@@ -1,0 +1,84 @@
+{% if artist and artist.image_path %}
+  {% if artist.image_path.startswith("uploads/") %}
+    {% set image_url = "/static/" ~ artist.image_path %}
+  {% else %}
+    {% set image_url = "/assets/images/" ~ artist.image_path %}
+  {% endif %}
+{% else %}
+  {% set image_url = "" %}
+{% endif %}
+{% set modal_id = "artist-modal-" ~ (artist.id if artist else "new") %}
+{% set title = modal_title %}
+{% set form_attrs = 'class="modal-form" hx-post="' ~ submit_url ~ '" hx-target="#artists-list" hx-swap="innerHTML" hx-include="#artist-filters" data-modal-form="true"' %}
+{% set body_html %}
+  <div class="form-grid">
+    <div class="form-field">
+      <label for="artist-name">Nome</label>
+      <input
+        class="input"
+        id="artist-name"
+        name="name"
+        type="text"
+        required
+        value="{{ artist.name if artist else '' }}"
+        placeholder="Ex.: Marie Curie" />
+    </div>
+    <div class="form-field">
+      <label for="artist-bio">Bio</label>
+      <textarea
+        class="textarea"
+        id="artist-bio"
+        name="bio"
+        rows="4"
+        required
+        placeholder="Resumo curto do artista.">{{ artist.bio if artist else '' }}</textarea>
+    </div>
+    <div class="form-field">
+      <label>Imagem</label>
+      <div class="image-upload" data-image-upload>
+        <input
+          type="file"
+          accept="image/*"
+          class="hidden"
+          data-image-input />
+        <button type="button" class="btn btn-outline" data-image-trigger>
+          Escolher imagem
+        </button>
+        <input type="hidden" name="image_path" value="{{ artist.image_path if artist else '' }}" data-image-path />
+        <div class="image-preview {% if not image_url %}is-empty{% endif %}" data-image-preview style="{% if image_url %}background-image: url('{{ image_url }}');{% endif %}"></div>
+      </div>
+      <small>Upload de imagem (PNG/JPG/GIF).</small>
+    </div>
+    <div class="form-field timeline-editor" data-timeline-editor>
+      <div class="timeline-editor-header">
+        <label>Linha do tempo</label>
+        <button type="button" class="btn btn-ghost" data-timeline-add>+ Adicionar período</button>
+      </div>
+      <div class="timeline-rows" data-timeline-rows>
+        {% if artist and artist.timeline_entries %}
+          {% for entry in artist.timeline_entries %}
+            <div class="timeline-row" data-timeline-row>
+              <input class="input" type="number" name="timeline_year" placeholder="Ano" value="{{ entry.year }}" />
+              <input class="input" type="text" name="timeline_title" placeholder="Título (opcional)" value="{{ entry.title or '' }}" />
+              <button type="button" class="btn btn-danger-outline" data-timeline-remove>Remover</button>
+              <textarea class="textarea" name="timeline_description" rows="2" placeholder="Descrição">{{ entry.description }}</textarea>
+            </div>
+          {% endfor %}
+        {% endif %}
+      </div>
+      <template data-timeline-template>
+        <div class="timeline-row" data-timeline-row>
+          <input class="input" type="number" name="timeline_year" placeholder="Ano" />
+          <input class="input" type="text" name="timeline_title" placeholder="Título (opcional)" />
+          <button type="button" class="btn btn-danger-outline" data-timeline-remove>Remover</button>
+          <textarea class="textarea" name="timeline_description" rows="2" placeholder="Descrição"></textarea>
+        </div>
+      </template>
+    </div>
+  </div>
+{% endset %}
+{% set footer_html %}
+  <button type="button" class="btn btn-ghost" data-modal-close>Cancelar</button>
+  <button type="submit" class="btn btn-primary">{{ submit_label }}</button>
+{% endset %}
+{% include "ui/partials/modal.html" with context %}

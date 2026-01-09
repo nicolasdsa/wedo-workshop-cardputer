@@ -8,19 +8,30 @@
     <div class="artist-hero-label">O ARTISTA</div>
     <div class="artist-hero-name">{{ artist.name }}</div>
     <div class="artist-hero-bio">{{ artist.bio }}</div>
-    {% if scenarios %}
-      <div class="artist-scenarios">
-        <h3>Cenários</h3>
+    <div class="artist-scenarios">
+      <h3>Cenários</h3>
+      {% if scenarios %}
         <div class="artist-scenarios-list">
           {% for sc in scenarios %}
             <a class="scenario-pill" href="/ui/scenarios/{{ sc.id }}/run">{{ sc.title }}</a>
           {% endfor %}
         </div>
-      </div>
-    {% endif %}
+      {% else %}
+        <small>Nenhum cenário ativo para este artista.</small>
+      {% endif %}
+    </div>
   </div>
   <div class="artist-hero-right">
-    <div class="artist-hero-photo" style="background-image: url('/assets/images/{{ artist.image_path or 'placeholder.png' }}');"></div>
+    {% if artist.image_path %}
+      {% if artist.image_path.startswith("uploads/") %}
+        {% set image_url = "/static/" ~ artist.image_path %}
+      {% else %}
+        {% set image_url = "/assets/images/" ~ artist.image_path %}
+      {% endif %}
+    {% else %}
+      {% set image_url = "/assets/images/placeholder.png" %}
+    {% endif %}
+    <div class="artist-hero-photo" style="background-image: url('{{ image_url }}');"></div>
   </div>
 </section>
 

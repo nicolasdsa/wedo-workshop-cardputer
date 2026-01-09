@@ -66,13 +66,13 @@ def list_scenarios_filtered(
     return scenarios_query.order_by(Scenario.updated_at.desc()).all()
 
 
-def list_scenarios_by_artist(db: Session, artist_id: int) -> list[Scenario]:
-    return (
-        db.query(Scenario)
-        .filter(Scenario.artist_id == artist_id)
-        .order_by(Scenario.created_at.desc())
-        .all()
-    )
+def list_scenarios_by_artist(
+    db: Session, artist_id: int, only_active: bool = False
+) -> list[Scenario]:
+    scenarios_query = db.query(Scenario).filter(Scenario.artist_id == artist_id)
+    if only_active:
+        scenarios_query = scenarios_query.filter(Scenario.is_active.is_(True))
+    return scenarios_query.order_by(Scenario.created_at.desc()).all()
 
 
 def update_scenario(

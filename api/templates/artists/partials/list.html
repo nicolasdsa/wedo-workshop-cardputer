@@ -1,0 +1,47 @@
+{% if artists %}
+  <ul class="artist-list">
+    {% for artist in artists %}
+      {% if artist.image_path %}
+        {% if artist.image_path.startswith("uploads/") %}
+          {% set image_url = "/static/" ~ artist.image_path %}
+        {% else %}
+          {% set image_url = "/assets/images/" ~ artist.image_path %}
+        {% endif %}
+      {% else %}
+        {% set image_url = "/assets/images/placeholder.png" %}
+      {% endif %}
+      <li class="artist-card-row" id="artist-{{ artist.id }}">
+        <div class="artist-thumb" style="background-image: url('{{ image_url }}');"></div>
+        <div class="artist-card-body">
+          <h3>{{ artist.name }}</h3>
+          <p class="artist-card-bio">{{ artist.bio }}</p>
+        </div>
+        <div class="artist-card-actions">
+          <a class="btn btn-primary" href="/ui/artists/{{ artist.id }}">Executar</a>
+          <button
+            type="button"
+            class="btn btn-outline"
+            hx-get="/ui/artists/{{ artist.id }}/edit-modal"
+            hx-target="#modal-root"
+            hx-swap="innerHTML">
+            Editar
+          </button>
+          <button
+            type="button"
+            class="btn btn-danger-outline"
+            hx-get="/ui/artists/{{ artist.id }}/delete-modal"
+            hx-target="#modal-root"
+            hx-swap="innerHTML">
+            Excluir
+          </button>
+        </div>
+      </li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <div class="empty-state">
+    <h3>Nenhum artista encontrado</h3>
+    <p>Revise a busca ou crie um artista para continuar.</p>
+    <button type="button" class="btn btn-ghost" data-clear-filters>Limpar busca</button>
+  </div>
+{% endif %}

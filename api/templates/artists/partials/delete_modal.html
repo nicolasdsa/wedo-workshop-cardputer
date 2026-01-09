@@ -1,0 +1,14 @@
+{% set modal_id = "artist-delete-" ~ artist.id %}
+{% set title = "Excluir artista?" %}
+{% set form_attrs = 'class="modal-form" hx-post="/ui/artists/' ~ artist.id ~ '/delete" hx-target="#artists-list" hx-swap="innerHTML" hx-include="#artist-filters" data-modal-form="true"' %}
+{% set body_html %}
+  <p>
+    Tem certeza que deseja excluir <strong>{{ artist.name }}</strong>?
+    Essa ação não pode ser desfeita.
+  </p>
+{% endset %}
+{% set footer_html %}
+  <button type="button" class="btn btn-ghost" data-modal-close>Cancelar</button>
+  <button type="submit" class="btn btn-danger">Excluir</button>
+{% endset %}
+{% include "ui/partials/modal.html" with context %}

@@ -48,6 +48,13 @@ def list_artists(db: Session) -> list[Artist]:
     return db.query(Artist).order_by(Artist.name).all()
 
 
+def list_artists_filtered(db: Session, query: str | None = None) -> list[Artist]:
+    artists_query = db.query(Artist)
+    if query:
+        artists_query = artists_query.filter(Artist.name.ilike(f"%{query}%"))
+    return artists_query.order_by(Artist.name).all()
+
+
 def update_artist(db: Session, artist_id: int, data: ArtistUpdate) -> Artist:
     artist = get_artist(db, artist_id)
 

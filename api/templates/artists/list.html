@@ -3,15 +3,203 @@
 {% block title %}Artistas{% endblock %}
 
 {% block content %}
-<section class="artists-grid">
-  {% for artist in artists %}
-    <a class="artist-card" href="/ui/artists/{{ artist.id }}">
-      <div class="artist-photo" style="background-image: url('/assets/images/{{ artist.image_path or 'placeholder.png' }}');"></div>
-      <div class="artist-name">{{ artist.name }}</div>
-    </a>
-  {% endfor %}
-  {% if artists|length == 0 %}
-    <p>Não há artistas cadastrados ainda.</p>
-  {% endif %}
-</section>
+  <section class="scenarios-header">
+    <div>
+      <h2>Artistas</h2>
+      <p class="section-subtitle">Gerencie artistas e suas linhas do tempo.</p>
+    </div>
+    <div class="scenarios-actions">
+      <button
+        type="button"
+        class="btn btn-primary"
+        hx-get="/ui/artists/new-modal"
+        hx-target="#modal-root"
+        hx-swap="innerHTML">
+        + Criar artista
+      </button>
+    </div>
+  </section>
+
+  <section class="filter-bar">
+    <form
+      id="artist-filters"
+      hx-get="/ui/artists/list"
+      hx-target="#artists-list"
+      hx-swap="innerHTML"
+      hx-push-url="/ui/artists"
+      hx-trigger="keyup changed delay:250ms, change">
+      <div class="filter-row">
+        <div class="filter-search">
+          <input
+            class="input input-lg"
+            type="search"
+            name="q"
+            placeholder="Buscar artista pelo nome..."
+            value="{{ query }}" />
+          <button type="button" class="btn btn-ghost" data-clear-filters>Limpar</button>
+        </div>
+      </div>
+    </form>
+  </section>
+
+  <section id="artists-list">
+    {% include "artists/partials/list.html" %}
+  </section>
+
+  <div id="modal-root"></div>
+
+  <script>
+    (function () {
+      const modalRoot = document.getElementById("modal-root");
+      const filterForm = document.getElementById("artist-filters");
+      const clearButtons = document.querySelectorAll("[data-clear-filters]");
+
+      function lockBody(isLocked) {
+        document.body.classList.toggle("modal-open", isLocked);
+      }
+
+      function closeModal(modalEl) {
+        if (!modalEl) return;
+        modalEl.remove();
+        lockBody(false);
+      }
+
+      async function uploadFile(file) {
+        if (!file) return null;
+        const formData = new FormData();
+        formData.append("file", file);
+        try {
+          const response = await fetch("/uploads/", {
+            method: "POST",
+            body: formData,
+          });
+          if (!response.ok) return null;
+          return await response.json();
+        } catch (err) {
+          return null;
+        }
+      }
+
+      function initImageUpload(scope) {
+        scope.querySelectorAll("[data-image-upload]").forEach((container) => {
+          const input = container.querySelector("[data-image-input]");
+          const trigger = container.querySelector("[data-image-trigger]");
+          const preview = container.querySelector("[data-image-preview]");
+          const hidden = container.querySelector("[data-image-path]");
+          if (!input || !trigger || !preview || !hidden) return;
+
+          trigger.addEventListener("click", function () {
+            input.click();
+          });
+
+          input.addEventListener("change", async function () {
+            const file = input.files && input.files[0];
+            if (!file) return;
+            const uploaded = await uploadFile(file);
+            if (!uploaded || !uploaded.path) return;
+            hidden.value = uploaded.path;
+            const url = uploaded.path.startsWith("uploads/")
+              ? `/static/${uploaded.path}`
+              : uploaded.path;
+            preview.style.backgroundImage = `url('${url}')`;
+            preview.classList.remove("is-empty");
+          });
+        });
+      }
+
+      function initTimelineEditor(scope) {
+        scope.querySelectorAll("[data-timeline-editor]").forEach((editor) => {
+          const rows = editor.querySelector("[data-timeline-rows]");
+          const addBtn = editor.querySelector("[data-timeline-add]");
+          const template = editor.querySelector("[data-timeline-template]");
+          if (!rows || !addBtn || !template) return;
+
+          function bindRow(row) {
+            const removeBtn = row.querySelector("[data-timeline-remove]");
+            if (removeBtn) {
+              removeBtn.addEventListener("click", function () {
+                row.remove();
+              });
+            }
+          }
+
+          rows.querySelectorAll("[data-timeline-row]").forEach(bindRow);
+
+          addBtn.addEventListener("click", function () {
+            const fragment = template.content.cloneNode(true);
+            const newRow = fragment.querySelector("[data-timeline-row]");
+            if (newRow) {
+              bindRow(newRow);
+              rows.appendChild(newRow);
+            }
+          });
+        });
+      }
+
+      function setupModal(modalEl) {
+        if (!modalEl) return;
+        lockBody(true);
+        const modalCard = modalEl.querySelector(".modal");
+        if (modalCard) {
+          modalCard.addEventListener("click", function (event) {
+            event.stopPropagation();
+          });
+        }
+        modalEl.addEventListener("click", function (event) {
+          if (event.target === modalEl || event.target.hasAttribute("data-modal-close")) {
+            closeModal(modalEl);
+          }
+        });
+        modalEl.querySelectorAll("[data-modal-close]").forEach((btn) => {
+          btn.addEventListener("click", function () {
+            closeModal(modalEl);
+          });
+        });
+        document.addEventListener("keydown", function (event) {
+          if (event.key === "Escape") {
+            closeModal(modalEl);
+          }
+        }, { once: true });
+
+        initImageUpload(modalEl);
+        initTimelineEditor(modalEl);
+      }
+
+      function clearFilters() {
+        if (!filterForm) return;
+        filterForm.querySelectorAll('input[name="q"]').forEach((input) => {
+          input.value = "";
+        });
+        if (window.htmx) {
+          window.htmx.trigger(filterForm, "change");
+        }
+      }
+
+      clearButtons.forEach((btn) => {
+        btn.addEventListener("click", clearFilters);
+      });
+
+      document.body.addEventListener("htmx:afterSwap", function (event) {
+        if (event.target && event.target.id === "modal-root") {
+          const modalEl = event.target.querySelector("[data-modal-backdrop]");
+          if (modalEl) setupModal(modalEl);
+        }
+        if (event.target && event.target.id === "artists-list") {
+          const emptyClear = event.target.querySelector("[data-clear-filters]");
+          if (emptyClear) {
+            emptyClear.addEventListener("click", clearFilters);
+          }
+        }
+      });
+
+      document.body.addEventListener("htmx:afterRequest", function (event) {
+        const triggerEl = event.detail.elt;
+        if (!triggerEl || !triggerEl.hasAttribute("data-modal-form")) return;
+        if (event.detail.successful) {
+          const modalEl = modalRoot?.querySelector("[data-modal-backdrop]");
+          closeModal(modalEl);
+        }
+      });
+    })();
+  </script>
 {% endblock %}
