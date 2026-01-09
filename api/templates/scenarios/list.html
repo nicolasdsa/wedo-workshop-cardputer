@@ -3,22 +3,351 @@
 {% block title %}Cenários disponíveis{% endblock %}
 
 {% block content %}
-  <section>
-    <h2>Cenários disponíveis</h2>
-    <ul class="scenario-list">
-      {% for scenario in scenarios %}
-        <li class="scenario-card">
-          <div>
-            <h3>{{ scenario.title }}</h3>
-            <p>{{ scenario.description }}</p>
-          </div>
-          <a href="/ui/scenarios/{{ scenario.id }}/run">
-            <button>Executar</button>
-          </a>
-        </li>
-      {% else %}
-        <li>Não há cenários cadastrados.</li>
-      {% endfor %}
-    </ul>
+  <section class="scenarios-header">
+    <div>
+      <h2>Cenários disponíveis</h2>
+      <p class="section-subtitle">Organize, execute e acompanhe cada experimento.</p>
+    </div>
+    <div class="scenarios-actions">
+      <button
+        type="button"
+        class="btn btn-primary"
+        hx-get="/ui/scenarios/new-modal"
+        hx-target="#modal-root"
+        hx-swap="innerHTML">
+        + Criar cenário
+      </button>
+    </div>
   </section>
+
+  <section class="filter-bar">
+    <form
+      id="scenario-filters"
+      hx-get="/ui/scenarios/list"
+      hx-target="#scenarios-list"
+      hx-swap="innerHTML"
+      hx-push-url="/ui/scenarios"
+      hx-trigger="keyup changed delay:250ms, change">
+      <div class="filter-row">
+        <div class="filter-search">
+          <input
+            class="input input-lg"
+            type="search"
+            name="query"
+            placeholder="Buscar cenário pelo nome..."
+            value="{{ query }}" />
+          <button type="button" class="btn btn-ghost" data-clear-filters>Limpar</button>
+        </div>
+      </div>
+      <div class="filter-row filter-row-split">
+        <label class="switch">
+          <input
+            type="checkbox"
+            name="show_inactive"
+            value="true"
+            {% if show_inactive %}checked{% endif %} />
+          <span class="switch-slider"></span>
+          <span class="switch-label">Mostrar desativados</span>
+        </label>
+        <div class="chip-select" data-chip-select>
+          <label class="chip-select-label">Artistas</label>
+          <div class="chip-select-input">
+            <input
+              type="text"
+              class="input"
+              data-chip-input
+              placeholder="Buscar artista..."
+              autocomplete="off" />
+            <div class="chip-select-dropdown" data-chip-dropdown></div>
+          </div>
+          <div class="chip-select-chips" data-chip-container></div>
+        </div>
+      </div>
+    </form>
+  </section>
+
+  <section id="scenarios-list">
+    {% include "scenarios/partials/list.html" %}
+  </section>
+
+  <div id="modal-root"></div>
+
+  <script id="artists-data" type="application/json">
+    [
+      {% for artist in artists %}
+        {"id": {{ artist.id }}, "name": {{ artist.name | tojson }} }{% if not loop.last %},{% endif %}
+      {% endfor %}
+    ]
+  </script>
+  <script id="selected-artists-data" type="application/json">
+    [
+      {% for artist in selected_artists %}
+        {"id": {{ artist.id }}, "name": {{ artist.name | tojson }} }{% if not loop.last %},{% endif %}
+      {% endfor %}
+    ]
+  </script>
+
+  <script>
+    (function () {
+      const modalRoot = document.getElementById("modal-root");
+      const filterForm = document.getElementById("scenario-filters");
+      const clearButtons = document.querySelectorAll("[data-clear-filters]");
+      const artistsDataScript = document.getElementById("artists-data");
+      const selectedArtistsScript = document.getElementById("selected-artists-data");
+      let artists = [];
+      let selectedArtists = [];
+
+      try {
+        artists = JSON.parse(artistsDataScript?.textContent || "[]");
+        selectedArtists = JSON.parse(selectedArtistsScript?.textContent || "[]");
+      } catch (err) {
+        artists = [];
+        selectedArtists = [];
+      }
+
+      function lockBody(isLocked) {
+        document.body.classList.toggle("modal-open", isLocked);
+      }
+
+      function closeModal(modalEl) {
+        if (!modalEl) return;
+        modalEl.remove();
+        lockBody(false);
+      }
+
+      function setupModal(modalEl) {
+        if (!modalEl) return;
+        lockBody(true);
+        const modalCard = modalEl.querySelector(".modal");
+        if (modalCard) {
+          modalCard.addEventListener("click", function (event) {
+            event.stopPropagation();
+          });
+        }
+        modalEl.addEventListener("click", function (event) {
+          if (event.target === modalEl || event.target.hasAttribute("data-modal-close")) {
+            closeModal(modalEl);
+          }
+        });
+        modalEl.querySelectorAll("[data-modal-close]").forEach((btn) => {
+          btn.addEventListener("click", function () {
+            closeModal(modalEl);
+          });
+        });
+        document.addEventListener("keydown", function (event) {
+          if (event.key === "Escape") {
+            closeModal(modalEl);
+          }
+        }, { once: true });
+        initArtistSelect(modalEl);
+      }
+
+      function renderDropdown(container, options, onSelect) {
+        container.innerHTML = "";
+        if (!options.length) {
+          const empty = document.createElement("div");
+          empty.className = "dropdown-empty";
+          empty.textContent = "Nenhum artista encontrado.";
+          container.appendChild(empty);
+          return;
+        }
+        options.forEach((artist) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "dropdown-option";
+          button.textContent = artist.name;
+          button.addEventListener("click", function () {
+            onSelect(artist);
+          });
+          container.appendChild(button);
+        });
+      }
+
+      function initArtistSelect(scope) {
+        const selectContainers = scope.querySelectorAll("[data-artist-select]");
+        selectContainers.forEach((container) => {
+          const input = container.querySelector("[data-artist-input]");
+          const dropdown = container.querySelector("[data-artist-dropdown]");
+          const hiddenInput = container.querySelector('input[type="hidden"][name="artist_id"]');
+          if (!input || !dropdown || !hiddenInput) return;
+
+          function getMatches(term) {
+            const normalized = term.trim().toLowerCase();
+            return artists.filter((artist) =>
+              artist.name.toLowerCase().includes(normalized)
+            );
+          }
+
+          function selectArtist(artist) {
+            input.value = artist ? artist.name : "";
+            hiddenInput.value = artist ? artist.id : "";
+            dropdown.classList.remove("is-open");
+            dropdown.innerHTML = "";
+          }
+
+          input.addEventListener("focus", function () {
+            const matches = getMatches(input.value);
+            dropdown.classList.add("is-open");
+            renderDropdown(dropdown, matches, selectArtist);
+          });
+
+          input.addEventListener("input", function () {
+            if (!input.value.trim()) {
+              hiddenInput.value = "";
+            }
+            const matches = getMatches(input.value);
+            dropdown.classList.add("is-open");
+            renderDropdown(dropdown, matches, selectArtist);
+          });
+
+          document.addEventListener("click", function (event) {
+            if (!container.contains(event.target)) {
+              dropdown.classList.remove("is-open");
+            }
+          });
+        });
+      }
+
+      function initChipSelect() {
+        const container = document.querySelector("[data-chip-select]");
+        if (!container || !filterForm) return;
+        const input = container.querySelector("[data-chip-input]");
+        const dropdown = container.querySelector("[data-chip-dropdown]");
+        const chipContainer = container.querySelector("[data-chip-container]");
+        if (!input || !dropdown || !chipContainer) return;
+        const selectedMap = new Map();
+
+        function triggerFilter() {
+          if (window.htmx && filterForm) {
+            window.htmx.trigger(filterForm, "change");
+          }
+        }
+
+        function addChip(artist) {
+          if (selectedMap.has(artist.id)) return;
+          selectedMap.set(artist.id, artist);
+          const chip = document.createElement("div");
+          chip.className = "chip";
+          chip.dataset.artistId = artist.id;
+          const label = document.createElement("span");
+          label.textContent = artist.name;
+          const removeBtn = document.createElement("button");
+          removeBtn.type = "button";
+          removeBtn.className = "chip-remove";
+          removeBtn.textContent = "×";
+          removeBtn.addEventListener("click", function () {
+            selectedMap.delete(artist.id);
+            chip.remove();
+            triggerFilter();
+          });
+          const hidden = document.createElement("input");
+          hidden.type = "hidden";
+          hidden.name = "artists";
+          hidden.value = artist.id;
+          chip.appendChild(label);
+          chip.appendChild(removeBtn);
+          chip.appendChild(hidden);
+          chipContainer.appendChild(chip);
+        }
+
+        function renderMatches(term) {
+          const normalized = term.trim().toLowerCase();
+          const matches = artists.filter((artist) => {
+            if (selectedMap.has(artist.id)) return false;
+            return artist.name.toLowerCase().includes(normalized);
+          });
+          dropdown.classList.add("is-open");
+          renderDropdown(dropdown, matches, function (artist) {
+            addChip(artist);
+            input.value = "";
+            dropdown.classList.remove("is-open");
+            triggerFilter();
+          });
+        }
+
+        input.addEventListener("focus", function () {
+          renderMatches(input.value);
+        });
+
+        input.addEventListener("input", function () {
+          renderMatches(input.value);
+        });
+
+        document.addEventListener("click", function (event) {
+          if (!container.contains(event.target)) {
+            dropdown.classList.remove("is-open");
+          }
+        });
+
+        selectedArtists.forEach(addChip);
+        container._resetChips = function () {
+          selectedMap.clear();
+          if (chipContainer) chipContainer.innerHTML = "";
+        };
+      }
+
+      function clearFilters() {
+        if (!filterForm) return;
+        filterForm.querySelectorAll('input[name="query"]').forEach((input) => {
+          input.value = "";
+        });
+        filterForm.querySelectorAll('input[name="show_inactive"]').forEach((input) => {
+          input.checked = false;
+        });
+        const chipSelect = filterForm.querySelector("[data-chip-select]");
+        if (chipSelect && chipSelect._resetChips) {
+          chipSelect._resetChips();
+        }
+        if (window.htmx) {
+          window.htmx.trigger(filterForm, "change");
+        }
+      }
+
+      clearButtons.forEach((btn) => {
+        btn.addEventListener("click", clearFilters);
+      });
+
+      document.body.addEventListener("htmx:afterSwap", function (event) {
+        if (event.target && event.target.id === "modal-root") {
+          const modalEl = event.target.querySelector("[data-modal-backdrop]");
+          if (modalEl) setupModal(modalEl);
+        }
+        if (event.target && event.target.id === "scenarios-list") {
+          const emptyClear = event.target.querySelector("[data-clear-filters]");
+          if (emptyClear) {
+            emptyClear.addEventListener("click", clearFilters);
+          }
+          setupScenarioCardClicks(event.target);
+        }
+      });
+
+      document.body.addEventListener("htmx:afterRequest", function (event) {
+        const triggerEl = event.detail.elt;
+        if (!triggerEl || !triggerEl.hasAttribute("data-modal-form")) return;
+        if (event.detail.successful) {
+          const modalEl = modalRoot?.querySelector("[data-modal-backdrop]");
+          closeModal(modalEl);
+        }
+      });
+
+      function setupScenarioCardClicks(scope) {
+        scope.querySelectorAll(".scenario-card").forEach((card) => {
+          if (card.dataset.clickBound === "true") return;
+          card.dataset.clickBound = "true";
+          card.addEventListener("click", function (event) {
+            const interactive = event.target.closest("a, button, input, textarea, select, label");
+            if (interactive) return;
+            const targetUrl = card.dataset.builderUrl;
+            if (targetUrl) {
+              window.location.href = targetUrl;
+            }
+          });
+        });
+      }
+
+      initArtistSelect(document);
+      initChipSelect();
+      setupScenarioCardClicks(document);
+    })();
+  </script>
 {% endblock %}

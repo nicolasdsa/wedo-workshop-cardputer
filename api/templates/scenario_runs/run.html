@@ -14,6 +14,7 @@
       <span id="screen-progress-step">Etapa 1 de {{ screens|length }}</span>
       <span id="screen-progress-label">Narrativa</span>
     </div>
+    <small id="screen-progress-hint" class="screen-progress-hint"></small>
     <div class="screen-progress-bar">
       <div id="screen-progress-fill" class="screen-progress-fill" style="width: {{ 100 / (screens|length) }}%"></div>
     </div>
@@ -204,6 +205,11 @@
   <script id="screens-data" type="application/json">
     {{ screens_json | safe }}
   </script>
+  <div id="scenario-run-meta"
+       class="hidden"
+       data-artist-id="{{ artist_id if artist_id else '' }}"
+       data-total-screens="{{ screens|length }}">
+  </div>
 
   <!-- Script para ligar cards ao painel de ação -->
   <script>
@@ -299,6 +305,8 @@
       const btnNext = document.getElementById("btn-next-screen");
       const indicator = document.getElementById("screen-indicator");
       const scenarioId = {{ scenario.id }};
+      const runMeta = document.getElementById("scenario-run-meta");
+      const artistId = runMeta?.dataset.artistId;
       let screens = [];
       let isTransitioning = false;
       let currentFetch = null;
@@ -314,17 +322,26 @@
           indicator.textContent = `Tela ${currentIndex + 1} de ${screens.length}`;
         }
         const stepText = document.getElementById("screen-progress-step");
+        const hintText = document.getElementById("screen-progress-hint");
         const barFill = document.getElementById("screen-progress-fill");
         if (stepText) stepText.textContent = `Etapa ${currentIndex + 1} de ${screens.length}`;
         if (barFill) {
           const percent = ((currentIndex + 1) / screens.length) * 100;
           barFill.style.width = `${percent}%`;
         }
+        if (hintText) {
+          hintText.textContent = currentIndex >= screens.length - 1 ? "Você chegou ao final." : "";
+        }
       }
 
       function updateNavButtons(currentIndex) {
         if (btnPrev) btnPrev.disabled = currentIndex <= 0;
-        if (btnNext) btnNext.disabled = currentIndex >= screens.length - 1;
+        if (!btnNext) return;
+        const isLast = currentIndex >= screens.length - 1;
+        btnNext.disabled = false;
+        btnNext.dataset.mode = isLast ? "finish" : "next";
+        btnNext.textContent = isLast ? "Finalizar →" : "Próximo →";
+        btnNext.classList.toggle("nav-finish", isLast);
       }
 
       function assetUrl(path) {
@@ -609,6 +626,11 @@
       if (btnNext) {
         btnNext.addEventListener("click", function () {
           const currentIndex = Number(screenContainer?.dataset.currentIndex || 0);
+          if (btnNext.dataset.mode === "finish") {
+            const targetArtist = artistId ? `/ui/artists/${artistId}` : "/ui/scenarios";
+            window.location.href = targetArtist;
+            return;
+          }
           const targetIndex = currentIndex + 1;
           loadScreen(targetIndex);
         });

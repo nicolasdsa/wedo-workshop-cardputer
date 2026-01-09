@@ -1,0 +1,52 @@
+{% if scenarios %}
+  <ul class="scenario-list">
+    {% for scenario in scenarios %}
+      <li class="scenario-card" id="scenario-{{ scenario.id }}" data-builder-url="/ui/scenarios/{{ scenario.id }}/builder">
+        <div class="scenario-main">
+          <div class="scenario-title-row">
+            <h3>{{ scenario.title }}</h3>
+            {% if scenario.is_active %}
+              <span class="badge badge-success">Ativo</span>
+            {% else %}
+              <span class="badge badge-muted">Inativo</span>
+            {% endif %}
+          </div>
+          <p>{{ scenario.description }}</p>
+          <div class="scenario-meta">
+            <span class="scenario-meta-label">Artista</span>
+            <span class="scenario-meta-value">
+              {{ scenario.artist.name if scenario.artist else "Sem artista" }}
+            </span>
+          </div>
+        </div>
+        <div class="scenario-actions">
+          <a class="btn btn-primary" href="/ui/scenarios/{{ scenario.id }}/run">
+            Executar
+          </a>
+          <button
+            type="button"
+            class="btn btn-outline"
+            hx-get="/ui/scenarios/{{ scenario.id }}/edit-modal"
+            hx-target="#modal-root"
+            hx-swap="innerHTML">
+            Editar
+          </button>
+          <button
+            type="button"
+            class="btn btn-danger-outline"
+            hx-get="/ui/scenarios/{{ scenario.id }}/delete-modal"
+            hx-target="#modal-root"
+            hx-swap="innerHTML">
+            Excluir
+          </button>
+        </div>
+      </li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <div class="empty-state">
+    <h3>Nenhum cenário encontrado</h3>
+    <p>Revise os filtros ou crie um novo cenário para começar.</p>
+    <button type="button" class="btn btn-ghost" data-clear-filters>Limpar filtros</button>
+  </div>
+{% endif %}

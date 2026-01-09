@@ -1,0 +1,58 @@
+{% set selected_artist_id = scenario.artist_id if scenario else "" %}
+{% set selected_artist_name = scenario.artist.name if scenario and scenario.artist else "" %}
+{% set form_attrs = 'class="modal-form" hx-post="' ~ submit_url ~ '" hx-target="#scenarios-list" hx-swap="innerHTML" hx-include="#scenario-filters" data-modal-form="true"' %}
+{% set body_html %}
+  <div class="form-grid">
+    <div class="form-field">
+      <label for="scenario-title">Título</label>
+      <input
+        class="input"
+        id="scenario-title"
+        name="title"
+        type="text"
+        required
+        value="{{ scenario.title if scenario else '' }}"
+        placeholder="Ex.: Reação com bicarbonato" />
+    </div>
+    <div class="form-field">
+      <label for="scenario-description">Descrição</label>
+      <textarea
+        class="textarea"
+        id="scenario-description"
+        name="description"
+        rows="4"
+        placeholder="Descreva o cenário em poucas linhas.">{{ scenario.description if scenario else '' }}</textarea>
+    </div>
+    <div class="form-field form-inline">
+      <label class="switch">
+        <input
+          type="checkbox"
+          name="is_active"
+          value="true"
+          {% if scenario is none or scenario.is_active %}checked{% endif %} />
+        <span class="switch-slider"></span>
+        <span class="switch-label">Cenário ativo</span>
+      </label>
+    </div>
+    <div class="form-field" data-artist-select data-selected-id="{{ selected_artist_id }}" data-selected-name="{{ selected_artist_name }}">
+      <label>Artista</label>
+      <div class="artist-select-input">
+        <input
+          class="input"
+          type="text"
+          data-artist-input
+          autocomplete="off"
+          placeholder="Buscar artista..."
+          value="{{ selected_artist_name }}" />
+        <input type="hidden" name="artist_id" value="{{ selected_artist_id }}" />
+        <div class="artist-select-dropdown" data-artist-dropdown></div>
+      </div>
+      <small>Digite para buscar e selecionar.</small>
+    </div>
+  </div>
+{% endset %}
+{% set footer_html %}
+  <button type="button" class="btn btn-ghost" data-modal-close>Cancelar</button>
+  <button type="submit" class="btn btn-primary">{{ submit_label }}</button>
+{% endset %}
+{% include "ui/partials/modal.html" with context %}

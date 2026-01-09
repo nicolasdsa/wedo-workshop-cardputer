@@ -50,6 +50,22 @@ def list_scenarios(db: Session) -> list[Scenario]:
     return db.query(Scenario).order_by(Scenario.created_at.desc()).all()
 
 
+def list_scenarios_filtered(
+    db: Session,
+    query: str | None = None,
+    show_inactive: bool = False,
+    artist_ids: Sequence[int] | None = None,
+) -> list[Scenario]:
+    scenarios_query = db.query(Scenario).options(selectinload(Scenario.artist))
+    if query:
+        scenarios_query = scenarios_query.filter(Scenario.title.ilike(f"%{query}%"))
+    if not show_inactive:
+        scenarios_query = scenarios_query.filter(Scenario.is_active.is_(True))
+    if artist_ids:
+        scenarios_query = scenarios_query.filter(Scenario.artist_id.in_(artist_ids))
+    return scenarios_query.order_by(Scenario.updated_at.desc()).all()
+
+
 def list_scenarios_by_artist(db: Session, artist_id: int) -> list[Scenario]:
     return (
         db.query(Scenario)

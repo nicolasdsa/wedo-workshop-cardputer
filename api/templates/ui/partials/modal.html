@@ -1,0 +1,25 @@
+<div class="modal-backdrop" id="{{ modal_id }}" data-modal-backdrop>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="{{ modal_id }}-title">
+    <div class="modal-header">
+      <h3 id="{{ modal_id }}-title">{{ title }}</h3>
+      <button type="button" class="modal-close" data-modal-close aria-label="Fechar">×</button>
+    </div>
+    {% if form_attrs %}
+      <form {{ form_attrs | safe }}>
+        <div class="modal-body">
+          {{ body_html | safe }}
+        </div>
+        <div class="modal-footer">
+          {{ footer_html | safe }}
+        </div>
+      </form>
+    {% else %}
+      <div class="modal-body">
+        {{ body_html | safe }}
+      </div>
+      <div class="modal-footer">
+        {{ footer_html | safe }}
+      </div>
+    {% endif %}
+  </div>
+</div>

@@ -10,21 +10,153 @@ from core.dependencies import get_db
 from core.templates import templates
 from models.instrument import Instrument
 from models.reagent import Reagent
+from services import artist as artist_service
 from services import scenario as scenario_service
 from services import scenario_run as run_service
 from services.utils_instruments import split_instruments_by_container
 from schemas.scenario_screen import ScenarioScreenRead
 
 
+def _parse_filter_params(params) -> tuple[str, bool, list[int]]:
+    query = (params.get("query") or "").strip()
+    show_inactive = (params.get("show_inactive") or "").lower() in {"1", "true", "on", "yes"}
+    artist_ids: list[int] = []
+    for raw_id in params.getlist("artists"):
+        try:
+            artist_ids.append(int(raw_id))
+        except (TypeError, ValueError):
+            continue
+    return query, show_inactive, artist_ids
+
+
 def list_scenarios_page(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
-    scenarios = [s for s in scenario_service.list_scenarios(db) if s.is_active]
+    query, show_inactive, artist_ids = _parse_filter_params(request.query_params)
+    scenarios = scenario_service.list_scenarios_filtered(
+        db, query=query, show_inactive=show_inactive, artist_ids=artist_ids
+    )
+    artists = artist_service.list_artists(db)
+    selected_artists = [artist for artist in artists if artist.id in set(artist_ids)]
     return templates.TemplateResponse(
         "scenarios/list.html",
         {
             "request": request,
             "scenarios": scenarios,
+            "artists": artists,
+            "selected_artists": selected_artists,
+            "query": query,
+            "show_inactive": show_inactive,
         },
     )
+
+
+def list_scenarios_partial(
+    request: Request, params, db: Session = Depends(get_db)
+) -> HTMLResponse:
+    query, show_inactive, artist_ids = _parse_filter_params(params)
+    scenarios = scenario_service.list_scenarios_filtered(
+        db, query=query, show_inactive=show_inactive, artist_ids=artist_ids
+    )
+    return templates.TemplateResponse(
+        "scenarios/partials/list.html",
+        {
+            "request": request,
+            "scenarios": scenarios,
+        },
+    )
+
+
+def new_scenario_modal(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+    return templates.TemplateResponse(
+        "scenarios/partials/scenario_modal.html",
+        {
+            "request": request,
+            "scenario": None,
+            "modal_title": "Criar cenário",
+            "submit_label": "Criar",
+            "submit_url": "/ui/scenarios",
+        },
+    )
+
+
+def edit_scenario_modal(
+    scenario_id: int, request: Request, db: Session = Depends(get_db)
+) -> HTMLResponse:
+    scenario = scenario_service.get_scenario_by_id(db, scenario_id)
+    return templates.TemplateResponse(
+        "scenarios/partials/scenario_modal.html",
+        {
+            "request": request,
+            "scenario": scenario,
+            "modal_title": "Editar cenário",
+            "submit_label": "Salvar",
+            "submit_url": f"/ui/scenarios/{scenario_id}",
+        },
+    )
+
+
+def delete_scenario_modal(
+    scenario_id: int, request: Request, db: Session = Depends(get_db)
+) -> HTMLResponse:
+    scenario = scenario_service.get_scenario_by_id(db, scenario_id)
+    return templates.TemplateResponse(
+        "scenarios/partials/delete_modal.html",
+        {
+            "request": request,
+            "scenario": scenario,
+        },
+    )
+
+
+async def create_scenario_action(
+    request: Request, db: Session = Depends(get_db)
+) -> HTMLResponse:
+    form = await request.form()
+    title = (form.get("title") or "").strip()
+    description = (form.get("description") or "").strip()
+    is_active = (form.get("is_active") or "").lower() in {"1", "true", "on", "yes"}
+    artist_id_raw = (form.get("artist_id") or "").strip()
+    artist_id = int(artist_id_raw) if artist_id_raw.isdigit() else None
+    scenario_service.create_scenario(
+        db=db,
+        title=title or "Novo cenário",
+        description=description,
+        is_active=is_active,
+        artist_id=artist_id,
+    )
+    return list_scenarios_partial(request, form, db)
+
+
+async def update_scenario_action(
+    scenario_id: int, request: Request, db: Session = Depends(get_db)
+) -> HTMLResponse:
+    form = await request.form()
+    title = (form.get("title") or "").strip()
+    description = (form.get("description") or "").strip()
+    is_active = (form.get("is_active") or "").lower() in {"1", "true", "on", "yes"}
+    artist_id_raw = (form.get("artist_id") or "").strip()
+    artist_id = int(artist_id_raw) if artist_id_raw.isdigit() else None
+    scenario = scenario_service.get_scenario_by_id(db, scenario_id)
+    scenario_service.update_scenario(
+        db=db,
+        scenario_id=scenario_id,
+        title=title or scenario.title,
+        description=description,
+        is_active=is_active,
+    )
+    if scenario.artist_id != artist_id:
+        scenario.artist_id = artist_id
+        db.add(scenario)
+        db.commit()
+        db.refresh(scenario)
+    return list_scenarios_partial(request, form, db)
+
+
+async def delete_scenario_action(
+    scenario_id: int, request: Request, db: Session = Depends(get_db)
+) -> HTMLResponse:
+    form = await request.form()
+    scenario_service.delete_scenario(db, scenario_id)
+    return list_scenarios_partial(request, form, db)
 
 
 def run_scenario_page(
@@ -49,6 +181,7 @@ def run_scenario_page(
         {
             "request": request,
             "scenario": scenario,
+            "artist_id": scenario.artist_id,
             "run_state": run_state,
             "reagents": reagents,
             "transfer_instruments": transfer_instruments,

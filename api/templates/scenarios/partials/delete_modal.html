@@ -1,0 +1,12 @@
+{% set form_attrs = 'class="modal-form" hx-post="/ui/scenarios/' ~ scenario.id ~ '/delete" hx-target="#scenarios-list" hx-swap="innerHTML" hx-include="#scenario-filters" data-modal-form="true"' %}
+{% set body_html %}
+  <p>
+    Tem certeza que deseja excluir o cenário <strong>{{ scenario.title }}</strong>?
+    Essa ação não pode ser desfeita.
+  </p>
+{% endset %}
+{% set footer_html %}
+  <button type="button" class="btn btn-ghost" data-modal-close>Cancelar</button>
+  <button type="submit" class="btn btn-danger">Excluir</button>
+{% endset %}
+{% include "ui/partials/modal.html" with context %}

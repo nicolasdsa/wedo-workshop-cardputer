@@ -792,6 +792,13 @@
   margin-bottom: 0.35rem;
 }
 
+.screen-progress-hint {
+  display: block;
+  color: #a7dca0;
+  font-size: 14px;
+  margin-bottom: 0.35rem;
+}
+
 .screen-progress-bar {
   background: #2a3b2b;
   border-radius: 999px;
@@ -833,6 +840,12 @@
   background: linear-gradient(90deg, #39d045, #66ff00);
   color: #0f1a10;
   box-shadow: 0 0 10px rgba(81, 226, 93, 0.45);
+}
+
+.nav-finish {
+  background: linear-gradient(90deg, #66ff00, #39d045);
+  color: #0f1a10;
+  box-shadow: 0 0 14px rgba(102, 255, 0, 0.5);
 }
 
 .nav-btn:disabled {
