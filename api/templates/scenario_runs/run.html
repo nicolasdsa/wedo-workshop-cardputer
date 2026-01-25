@@ -25,9 +25,11 @@
     <div id="scenario-screen-container"
          data-current-index="0">
       {% if screens %}
-        {% with screen = screens[0] %}
-          {% include "scenario_runs/partials/screen.html" %}
-        {% endwith %}
+        <div id="screen-stage" class="screen-stage">
+          {% with screen = screens[0] %}
+            {% include "scenario_runs/partials/screen.html" %}
+          {% endwith %}
+        </div>
       {% else %}
         <p>Este cenário ainda não possui telas lúdicas configuradas.</p>
       {% endif %}
@@ -300,6 +302,7 @@
   <script>
     (function () {
       const screenContainer = document.getElementById("scenario-screen-container");
+      const screenStage = document.getElementById("screen-stage");
       const screensDataScript = document.getElementById("screens-data");
       const btnPrev = document.getElementById("btn-prev-screen");
       const btnNext = document.getElementById("btn-next-screen");
@@ -310,6 +313,8 @@
       let screens = [];
       let isTransitioning = false;
       let currentFetch = null;
+      const animationDurationMs = 650;
+      const animationTimeoutMs = 1200;
 
       try {
         screens = JSON.parse(screensDataScript?.textContent || "[]");
@@ -528,13 +533,83 @@
         });
       }
 
+      function parseAnimationKeySafe(animationKey) {
+        if (window.labAnimations?.parseAnimationKey) {
+          return window.labAnimations.parseAnimationKey(animationKey);
+        }
+        if (!animationKey) return { entry: "", exit: "" };
+        const cleaned = animationKey.replace(/^animatecss:/i, "");
+        const parts = cleaned.split(":").map((part) => part.trim());
+        return { entry: parts[0] || "", exit: parts[1] || "" };
+      }
+
+      function normalizeAnimateCssNameSafe(name) {
+        if (window.labAnimations?.normalizeAnimateCssName) {
+          return window.labAnimations.normalizeAnimateCssName(name);
+        }
+        if (!name) return "";
+        return name.startsWith("animate__") ? name : `animate__${name}`;
+      }
+
+      function removeAnimateCssClasses(el) {
+        if (!el) return;
+        Array.from(el.classList).forEach((cls) => {
+          if (cls === "animate__animated" || cls.startsWith("animate__")) {
+            el.classList.remove(cls);
+          }
+        });
+      }
+
+      function applyAnimateCss(el, animationName) {
+        if (!el || !animationName) return;
+        const normalized = normalizeAnimateCssNameSafe(animationName);
+        if (!normalized) return;
+        el.style.setProperty("--animate-duration", `${animationDurationMs}ms`);
+        el.classList.add("animate__animated", normalized);
+      }
+
+      function waitAnimationEndSafe(el) {
+        if (window.labAnimations?.waitAnimationEnd) {
+          return window.labAnimations.waitAnimationEnd(el, animationTimeoutMs);
+        }
+        return new Promise((resolve) => {
+          if (!el) {
+            resolve();
+            return;
+          }
+          let settled = false;
+          const done = () => {
+            if (settled) return;
+            settled = true;
+            el.removeEventListener("animationend", onEnd);
+            clearTimeout(timer);
+            resolve();
+          };
+          const onEnd = (event) => {
+            if (event.target !== el) return;
+            done();
+          };
+          const timer = window.setTimeout(done, animationTimeoutMs);
+          el.addEventListener("animationend", onEnd);
+        });
+      }
+
+      function setTransitioningState(state) {
+        isTransitioning = state;
+        if (btnPrev) {
+          const currentIndex = Number(screenContainer?.dataset.currentIndex || 0);
+          btnPrev.disabled = state || currentIndex <= 0;
+        }
+        if (btnNext) btnNext.disabled = state;
+      }
+
       async function loadScreen(index) {
         if (isTransitioning) return;
-        if (!screenContainer || !screens.length || index < 0 || index >= screens.length) {
+        if (!screenContainer || !screenStage || !screens.length || index < 0 || index >= screens.length) {
           return;
         }
 
-        isTransitioning = true;
+        setTransitioningState(true);
 
         if (currentFetch && currentFetch.abort) {
           try { currentFetch.abort(); } catch (err) {}
@@ -542,12 +617,16 @@
         const controller = new AbortController();
         currentFetch = controller;
 
-        const currentScreenElement = screenContainer.querySelector(".scenario-screen");
+        const currentScreenElement = screenStage.querySelector(".scenario-screen.current")
+          || screenStage.querySelector(".scenario-screen");
+        if (currentScreenElement && !currentScreenElement.classList.contains("current")) {
+          currentScreenElement.classList.add("current");
+        }
 
         try {
           const response = await fetch(`/ui/scenarios/${scenarioId}/screens/${index}`, { signal: controller.signal });
           if (!response.ok) {
-            isTransitioning = false;
+            setTransitioningState(false);
             return;
           }
           const html = await response.text();
@@ -555,61 +634,67 @@
           temp.innerHTML = html.trim();
           const nextElement = temp.firstElementChild;
           if (!nextElement) {
-            isTransitioning = false;
+            setTransitioningState(false);
             return;
           }
 
           nextElement.style.position = "absolute";
           nextElement.style.inset = "0";
-          nextElement.classList.add("screen-fade-in");
+          nextElement.classList.add("next");
 
-          screenContainer.appendChild(nextElement);
+          screenStage.appendChild(nextElement);
           attachScreenBehaviors(nextElement, screens[index], index);
           screenContainer.dataset.currentIndex = String(index);
           updateIndicator(index);
           updateNavButtons(index);
 
-          const animationKey = screens[index]?.animation_key || "";
-          if (window.labAnimations) {
-            window.labAnimations.applyScreenAnimation(
-              currentScreenElement,
-              nextElement,
-              animationKey
-            );
+          const currentHeight = currentScreenElement
+            ? currentScreenElement.getBoundingClientRect().height
+            : screenStage.getBoundingClientRect().height;
+          if (currentHeight) {
+            screenStage.style.setProperty("--locked-h", `${currentHeight}px`);
+            screenStage.classList.add("is-transitioning");
           }
 
-          if (currentScreenElement) {
-            currentScreenElement.classList.add("screen-fade-out");
-            currentScreenElement.addEventListener(
-              "animationend",
-              () => {
-                if (currentScreenElement && currentScreenElement.isConnected) {
-                  currentScreenElement.remove();
-                }
-                nextElement.classList.remove("screen-fade-in");
-                isTransitioning = false;
-              },
-              { once: true }
-            );
-            setTimeout(() => {
-              if (currentScreenElement && currentScreenElement.isConnected) {
-                currentScreenElement.remove();
-              }
-              nextElement.classList.remove("screen-fade-in");
-              isTransitioning = false;
-            }, 600);
-          } else {
-            nextElement.classList.remove("screen-fade-in");
-            isTransitioning = false;
+          const animationKey = screens[index]?.animation_key || nextElement.dataset.animationKey || "";
+          const { entry, exit } = parseAnimationKeySafe(animationKey);
+          const hasAnimationKey = Boolean(animationKey);
+          const entryName = hasAnimationKey ? (entry || "fadeIn") : "";
+          const exitName = hasAnimationKey ? (exit || entryName) : "";
+
+          const waits = [];
+          if (currentScreenElement && exitName) {
+            applyAnimateCss(currentScreenElement, exitName);
+            waits.push(waitAnimationEndSafe(currentScreenElement));
           }
+          if (entryName) {
+            applyAnimateCss(nextElement, entryName);
+            waits.push(waitAnimationEndSafe(nextElement));
+          }
+
+          if (waits.length) {
+            await Promise.all(waits);
+          }
+
+          if (currentScreenElement && currentScreenElement.isConnected) {
+            removeAnimateCssClasses(currentScreenElement);
+            currentScreenElement.remove();
+          }
+          removeAnimateCssClasses(nextElement);
+          nextElement.classList.remove("next");
+          nextElement.classList.add("current");
         } catch (err) {
           console.error("Erro ao carregar tela do cenário", err);
-          isTransitioning = false;
+        } finally {
+          screenStage.classList.remove("is-transitioning");
+          screenStage.style.removeProperty("--locked-h");
+          setTransitioningState(false);
         }
       }
 
-      if (screenContainer && screens.length) {
-        const initialScreen = screenContainer.querySelector(".scenario-screen");
+      if (screenContainer && screenStage && screens.length) {
+        const initialScreen = screenStage.querySelector(".scenario-screen");
+        if (initialScreen) initialScreen.classList.add("current");
         attachScreenBehaviors(initialScreen, screens[0], 0);
         updateIndicator(0);
         updateNavButtons(0);

@@ -38,11 +38,20 @@
     </aside>
 
     <section class="builder-main">
-      <div class="builder-toolbar">
-        <label for="animation-key-input">Animação entre telas</label>
-        <input type="text"
+      <div class="builder-toolbar animation-toolbar">
+        <div class="animation-field">
+          <label for="animation-entry-select">Animação de entrada (próxima tela)</label>
+          <select id="animation-entry-select" class="animation-select"></select>
+        </div>
+        <div class="animation-preview">
+          <span class="animation-preview-label">Preview</span>
+          <button type="button" id="animation-preview-chip" class="animation-preview-chip" aria-live="polite">
+            Sem animação
+          </button>
+          <small id="animation-preview-value" class="animation-preview-value"></small>
+        </div>
+        <input type="hidden"
                id="animation-key-input"
-               placeholder="ex.: animatecss:fadeInRight:fadeOutLeft"
                value="{{ initial_screen.animation_key if initial_screen else '' }}" />
       </div>
 
@@ -105,6 +114,9 @@
       const paletteButtons = document.querySelectorAll(".palette-btn");
       const saveButton = document.getElementById("builder-save");
       const animationInput = document.getElementById("animation-key-input");
+      const animationEntrySelect = document.getElementById("animation-entry-select");
+      const animationPreviewChip = document.getElementById("animation-preview-chip");
+      const animationPreviewValue = document.getElementById("animation-preview-value");
       const propsContainer = document.getElementById("props-content");
       const propsTemplates = document.getElementById("props-templates");
       const deleteComponentBtn = document.getElementById("delete-component");
@@ -132,6 +144,24 @@
       let currentScreenId = null;
       let draftComponents = [];
       let saveTimeout = null;
+      let isSyncingAnimation = false;
+
+      const animationEntryOptions = [
+        { value: "fadeIn", label: "Aparecer (suave)" },
+        { value: "fadeInUp", label: "Subir aparecendo" },
+        { value: "fadeInDown", label: "Descer aparecendo" },
+        { value: "fadeInLeft", label: "Entrar da esquerda (suave)" },
+        { value: "fadeInRight", label: "Entrar da direita (suave)" },
+        { value: "zoomIn", label: "Aproximar (zoom)" },
+        { value: "slideInUp", label: "Subir (deslizante)" },
+        { value: "slideInDown", label: "Descer (deslizante)" },
+        { value: "slideInLeft", label: "Entrar da esquerda (deslizante)" },
+        { value: "slideInRight", label: "Entrar da direita (deslizante)" },
+        { value: "bounceIn", label: "Quicar entrando" },
+        { value: "flipInX", label: "Virar (flip) vertical" },
+        { value: "flipInY", label: "Virar (flip) horizontal" },
+        { value: "rotateIn", label: "Girar entrando" },
+      ];
 
       function uid() {
         return `temp-${Math.random().toString(16).slice(2)}${Date.now()}`;
@@ -143,6 +173,79 @@
         if (path.startsWith("/")) return path;
         if (path.startsWith("uploads/")) return `/static/${path}`;
         return `/assets/images/${path}`;
+      }
+
+      function populateAnimationSelect(selectEl, options) {
+        if (!selectEl) return;
+        selectEl.innerHTML = "";
+        const emptyOption = document.createElement("option");
+        emptyOption.value = "";
+        emptyOption.textContent = "Sem animação";
+        selectEl.appendChild(emptyOption);
+        options.forEach((opt) => {
+          const optionEl = document.createElement("option");
+          optionEl.value = opt.value;
+          optionEl.textContent = opt.label;
+          selectEl.appendChild(optionEl);
+        });
+      }
+
+      function parseAnimationKeyInput(value) {
+        if (!value) return { entry: "", exit: "" };
+        const cleaned = value.replace(/^animatecss:/i, "");
+        const parts = cleaned.split(":").map((part) => part.trim());
+        return {
+          entry: parts[0] || "",
+          exit: parts[1] || "",
+        };
+      }
+
+      function buildAnimationKey(entry, exit) {
+        if (!entry) return "";
+        if (!exit) return `animatecss:${entry}`;
+        return `animatecss:${entry}:${exit}`;
+      }
+
+      function findAnimationLabel(options, value) {
+        if (!value) return "Sem animação";
+        const found = options.find((opt) => opt.value === value);
+        return found ? found.label : value;
+      }
+
+      function updateAnimationPreview() {
+        if (!animationPreviewChip) return;
+        const entry = animationEntrySelect?.value || "";
+        animationPreviewChip.textContent = findAnimationLabel(animationEntryOptions, entry);
+        if (animationPreviewValue) {
+          animationPreviewValue.textContent = entry ? `Valor: ${entry}` : "";
+        }
+        if (!entry) return;
+        if (window.labAnimations?.replayAnimateCss) {
+          window.labAnimations.replayAnimateCss(animationPreviewChip, entry, 650);
+          return;
+        }
+        animationPreviewChip.classList.remove("animate__animated");
+        animationPreviewChip.classList.remove(`animate__${entry}`);
+        void animationPreviewChip.offsetWidth;
+        animationPreviewChip.style.setProperty("--animate-duration", "650ms");
+        animationPreviewChip.classList.add("animate__animated", `animate__${entry}`);
+      }
+
+      function syncAnimationControlsFromKey(key) {
+        isSyncingAnimation = true;
+        const { entry, exit } = parseAnimationKeyInput(key);
+        let nextEntry = entry || exit || "";
+        if (animationEntrySelect) animationEntrySelect.value = nextEntry || "";
+        updateAnimationPreview();
+        isSyncingAnimation = false;
+      }
+
+      function updateAnimationKeyFromControls() {
+        if (!animationInput || isSyncingAnimation) return;
+        const entry = animationEntrySelect?.value || "";
+        animationInput.value = buildAnimationKey(entry, "");
+        updateAnimationPreview();
+        queueSave();
       }
 
       function getCanvas() {
@@ -415,6 +518,7 @@
         const canvas = getCanvas();
         if (!canvas || !animationInput) return;
         animationInput.value = canvas.dataset.animationKey || "";
+        syncAnimationControlsFromKey(animationInput.value);
         currentScreenId = Number(canvas.dataset.screenId);
       }
 
@@ -493,9 +597,12 @@
         });
       }
 
-      if (animationInput) {
-        animationInput.addEventListener("change", () => queueSave());
-        animationInput.addEventListener("input", () => queueSave());
+      if (animationEntrySelect) {
+        populateAnimationSelect(animationEntrySelect, animationEntryOptions);
+        animationEntrySelect.addEventListener("change", updateAnimationKeyFromControls);
+      }
+      if (animationPreviewChip) {
+        animationPreviewChip.addEventListener("click", updateAnimationPreview);
       }
 
       function renderPropsPanel(type, props) {

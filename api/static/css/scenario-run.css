@@ -274,12 +274,23 @@
 
 #scenario-screen-container {
   position: relative;
-  min-height: 460px;
 }
 
-#scenario-screen-container .scenario-screen {
+.screen-stage {
+  position: relative;
+  min-height: 460px;
+  overflow: hidden;
+}
+
+.screen-stage.is-transitioning {
+  height: var(--locked-h);
+}
+
+.screen-stage .scenario-screen {
   position: absolute;
   inset: 0;
+  width: 100%;
+  will-change: transform, opacity;
 }
 
 .screen-fade-in {
@@ -567,6 +578,73 @@
   display: flex;
   gap: 0.75rem;
   align-items: center;
+}
+
+.animation-toolbar {
+  display: grid;
+  grid-template-columns: minmax(240px, 1.3fr) minmax(180px, 0.7fr);
+  align-items: end;
+  gap: 0.75rem;
+}
+
+.animation-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.animation-select {
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #2f4f2e;
+  border-radius: 8px;
+  background: #132013;
+  color: #f5f5f5;
+}
+
+.animation-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  align-items: flex-start;
+}
+
+.animation-preview-label {
+  font-size: 12px;
+  color: #b6c3b6;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.animation-preview-chip {
+  background: #1b2a1b;
+  border: 1px solid #2f4f2e;
+  color: #f5f5f5;
+  border-radius: 999px;
+  padding: 0.4rem 0.85rem;
+  cursor: pointer;
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.animation-preview-chip:hover {
+  background: #243524;
+  border-color: #66ff00;
+}
+
+.animation-preview-value {
+  font-size: 12px;
+  color: #9fb09f;
+}
+
+@media (max-width: 1100px) {
+  .animation-toolbar {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
 }
 
 .builder-toolbar input {
