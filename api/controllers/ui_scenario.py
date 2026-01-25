@@ -164,6 +164,7 @@ def run_scenario_page(
 ) -> HTMLResponse:
     scenario = scenario_service.get_scenario_with_screens(db, scenario_id)
     screens = list(scenario.screens) if scenario.screens else []
+    screens = sorted(screens, key=lambda screen: screen.order_index)
     screens_json = json.dumps(
         [ScenarioScreenRead.model_validate(screen).model_dump(mode="json") for screen in screens]
     )
@@ -199,6 +200,7 @@ def scenario_screen_partial(
 ) -> HTMLResponse:
     scenario = scenario_service.get_scenario_with_screens(db, scenario_id)
     screens = list(scenario.screens) if scenario.screens else []
+    screens = sorted(screens, key=lambda screen: screen.order_index)
     if index < 0 or index >= len(screens):
         return HTMLResponse(content="Tela não encontrada.", status_code=404)
     screen = screens[index]
@@ -213,6 +215,7 @@ def scenario_builder_page(
 ) -> HTMLResponse:
     scenario = scenario_service.get_scenario_with_screens(db, scenario_id)
     screens = list(scenario.screens) if scenario.screens else []
+    screens = sorted(screens, key=lambda screen: screen.order_index)
     initial_screen = screens[0] if screens else None
     return templates.TemplateResponse(
         "scenario_runs/builder.html",
@@ -230,9 +233,9 @@ def builder_screen_partial(
 ) -> HTMLResponse:
     scenario = scenario_service.get_scenario_with_screens(db, scenario_id)
     screens = list(scenario.screens) if scenario.screens else []
-    if index < 0 or index >= len(screens):
+    screen = next((item for item in screens if item.order_index == index), None)
+    if not screen:
         return HTMLResponse(content="Tela não encontrada.", status_code=404)
-    screen = screens[index]
     return templates.TemplateResponse(
         "scenario_runs/partials/builder_canvas.html",
         {"request": request, "screen": screen, "index": index},
