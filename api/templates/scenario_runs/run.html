@@ -464,25 +464,30 @@
       function setupGifComponent(componentEl, screenData) {
         if (!componentEl) return;
         const props = parseComponentProps(componentEl, screenData);
-        if (!props.show_controls) return;
         const toggle = componentEl.querySelector(".gif-toggle");
         const gifImage = componentEl.querySelector(".gif-image");
         if (!toggle || !gifImage) return;
-        const gifPath = gifImage.dataset.gifSrc;
+        const gifPath = props.src || gifImage.dataset.gifSrc;
         if (!gifPath) return;
-        gifImage.dataset.playing = "true";
+        const firstFramePath = props.first_frame_src || gifImage.dataset.firstFrameSrc;
+        const setState = (isPlaying) => {
+          gifImage.dataset.playing = isPlaying ? "true" : "false";
+          if (isPlaying) {
+            gifImage.src = assetUrl(gifPath) + `?t=${Date.now()}`;
+            gifImage.classList.remove("paused");
+            toggle.textContent = "Pausar";
+          } else {
+            gifImage.src = assetUrl(firstFramePath || gifPath);
+            gifImage.classList.add("paused");
+            toggle.textContent = "Reproduzir";
+          }
+        };
+
+        setState(!(props.paused === true));
 
         toggle.addEventListener("click", function () {
           const isPlaying = gifImage.dataset.playing === "true";
-          if (isPlaying) {
-            gifImage.dataset.playing = "false";
-            gifImage.src = assetUrl(gifPath);
-            gifImage.classList.add("paused");
-          } else {
-            gifImage.dataset.playing = "true";
-            gifImage.src = assetUrl(gifPath) + `?t=${Date.now()}`;
-            gifImage.classList.remove("paused");
-          }
+          setState(!isPlaying);
         });
       }
 

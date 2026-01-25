@@ -131,7 +131,7 @@
         text: { text: "Novo texto", variant: "paragraph", align: "left" },
         image: { src: "", alt: "Imagem", fit: "contain" },
         gallery: { items: [], start_index: 0, transition: "fade", show_controls: true },
-        gif: { src: "", alt: "GIF", show_controls: true },
+        gif: { src: "", first_frame_src: "", alt: "GIF", paused: false, show_controls: true },
         button: { label: "Próximo", action: { type: "next" } },
       };
       const defaultSizes = {
@@ -139,7 +139,7 @@
         image: { w: 38, h: 32 },
         gallery: { w: 50, h: 38 },
         gif: { w: 40, h: 30 },
-        button: { w: 18, h: 10 },
+        button: { w: 12, h: 6 },
       };
       const SNAP_TOLERANCE = 6;
 
@@ -462,12 +462,43 @@
             }
           }
         } else if (type === "image" || type === "gif") {
-          const img = el.querySelector("img");
+          const controls = type === "gif" ? el.querySelector(".gif-controls") : null;
+          const toggle = type === "gif" ? el.querySelector(".gif-toggle") : null;
+          const mediaFrame = type === "gif" ? el.querySelector(".gif-media") : el.querySelector(".image-component");
+          let img = el.querySelector("img");
+          const shouldPause = type === "gif" && props.paused && props.first_frame_src;
+          const targetSrc = shouldPause ? props.first_frame_src : props.src;
+
+          if (mediaFrame && props.src) {
+            if (!img) {
+              img = document.createElement("img");
+              img.className = type === "gif" ? "gif-image gif-display" : "";
+              img.style.width = "100%";
+              img.style.height = "100%";
+              img.style.objectFit = "contain";
+              mediaFrame.innerHTML = "";
+              mediaFrame.appendChild(img);
+            }
+            if (targetSrc) {
+              img.src = assetUrl(targetSrc);
+            }
+          } else if (mediaFrame && !props.src) {
+            const label = type === "gif" ? "GIF" : "Imagem";
+            mediaFrame.innerHTML = `<div class="media-placeholder">${label}</div>`;
+          }
           if (img && props.src) {
-            img.src = assetUrl(props.src);
             img.dataset.gifSrc = props.src;
-            if (props.fit) img.style.objectFit = props.fit;
-            if (props.alt) img.alt = props.alt;
+          }
+          if (img && props.first_frame_src) {
+            img.dataset.firstFrameSrc = props.first_frame_src;
+          }
+          if (img && props.fit) img.style.objectFit = props.fit;
+          if (img && props.alt) img.alt = props.alt;
+          if (controls) {
+            controls.style.display = props.show_controls === false || !props.src ? "none" : "";
+          }
+          if (toggle) {
+            toggle.textContent = props.paused ? "Reproduzir" : "Pausar";
           }
         } else if (type === "gallery") {
           const stage = el.querySelector(".gallery-stage");
@@ -704,7 +735,9 @@
         }
         if (type === "gif") {
           const src = props.src ? assetUrl(props.src) : "";
-          return `<div class="media-frame gif-component"><img class="gif-image" data-gif-src="${props.src || ""}" src="${src}" alt="${props.alt || "GIF"}" /></div>`;
+          const controlsStyle = props.show_controls === false || !props.src ? ' style="display:none"' : "";
+          const label = props.paused ? "Reproduzir" : "Pausar";
+          return `<div class="gif-component" style="width:100%;height:100%;"><div class="media-frame gif-media" style="width:100%;height:100%;overflow:hidden;">${props.src ? `<img class="gif-image gif-display" style="width:100%;height:100%;object-fit:contain;" data-gif-src="${props.src || ""}" data-first-frame-src="${props.first_frame_src || ""}" src="${src}" alt="${props.alt || "GIF"}" />` : `<div class="media-placeholder">GIF</div>`}</div><div class="gif-controls" style="display:flex;justify-content:center;width:100%;"${controlsStyle}><button type="button" class="gif-toggle">${label}</button></div></div>`;
         }
         if (type === "gallery") {
           const first = props.items?.[0];
@@ -877,7 +910,19 @@
             const uploaded = await uploadFile(input.files[0]);
             if (uploaded) {
               const path = uploaded.path;
-              updateProps({ [input.dataset.upload === "src" ? "src" : "src"]: path });
+              const nextProps = { [input.dataset.upload === "src" ? "src" : "src"]: path };
+              if (label) label.textContent = path || input.files[0].name;
+              if (type === "gif") {
+                nextProps.first_frame_src = uploaded.first_frame_path || "";
+                nextProps.paused = false;
+              }
+              updateProps(nextProps);
+              if (selectedComponent && (type === "image" || type === "gif")) {
+                const img = selectedComponent.querySelector("img");
+                if (img && path) {
+                  img.src = `${assetUrl(path)}?v=${Date.now()}`;
+                }
+              }
             }
           });
         });

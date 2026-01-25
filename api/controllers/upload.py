@@ -24,5 +24,23 @@ def upload_file(file: UploadFile = File(...)) -> JSONResponse:
     with dest_path.open("wb") as buffer:
         buffer.write(file.file.read())
 
-    relative_path = f"uploads/{filename}"
-    return JSONResponse({"path": relative_path})
+    response_payload: dict[str, str] = {"path": f"/static/uploads/{filename}"}
+
+    is_gif = (file.content_type == "image/gif") or (suffix.lower() == ".gif")
+    if is_gif:
+        try:
+            from PIL import Image
+        except Exception:
+            Image = None
+        if Image:
+            try:
+                frame_path = dest_path.with_name(f"{dest_path.stem}_frame0.png")
+                with Image.open(dest_path) as img:
+                    img.seek(0)
+                    img.convert("RGBA").save(frame_path)
+                response_payload["first_frame_path"] = f"/static/uploads/{frame_path.name}"
+            except Exception:
+                # Fail silently to keep GIF upload working without frame extraction.
+                pass
+
+    return JSONResponse(response_payload)
