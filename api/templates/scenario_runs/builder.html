@@ -17,6 +17,7 @@
           <button type="button" id="delete-screen" class="ghost-btn danger">Excluir</button>
         </div>
       </div>
+      <div class="screen-order-status" id="screen-order-status" aria-live="polite"></div>
       <div class="builder-screen-list" id="builder-screen-list" data-scenario-id="{{ scenario.id }}">
         {% include "scenario_runs/partials/builder_screen_list.html" %}
       </div>
@@ -124,6 +125,7 @@
       const deleteScreenBtn = document.getElementById("delete-screen");
       const screenListEl = document.getElementById("builder-screen-list");
       const scenarioId = Number(screenListEl?.dataset.scenarioId || 0);
+      const screenOrderStatusEl = document.getElementById("screen-order-status");
 
       const defaultProps = {
         text: { text: "Novo texto", variant: "paragraph", align: "left" },
@@ -139,12 +141,18 @@
         gif: { w: 40, h: 30 },
         button: { w: 18, h: 10 },
       };
+      const SNAP_TOLERANCE = 6;
 
       let selectedComponent = null;
       let currentScreenId = null;
       let draftComponents = [];
       let saveTimeout = null;
       let isSyncingAnimation = false;
+      let draggingScreenEl = null;
+      let dragSnapshot = [];
+      let statusTimeout = null;
+      const dropPlaceholder = document.createElement("div");
+      dropPlaceholder.className = "screen-drop-placeholder";
 
       const animationEntryOptions = [
         { value: "fadeIn", label: "Aparecer (suave)" },
@@ -250,6 +258,159 @@
 
       function getCanvas() {
         return canvasContainer?.querySelector(".builder-canvas");
+      }
+
+      function clamp(value, min, max) {
+        return Math.min(Math.max(value, min), max);
+      }
+
+      function getGuides(canvas) {
+        return {
+          v: canvas.querySelector("#guide-v"),
+          h: canvas.querySelector("#guide-h"),
+        };
+      }
+
+      function setGuide(guideEl, valuePx, axis) {
+        if (!guideEl) return;
+        if (valuePx === null || valuePx === undefined) {
+          guideEl.classList.add("hidden");
+          return;
+        }
+        guideEl.classList.remove("hidden");
+        if (axis === "v") {
+          guideEl.style.left = `${valuePx}px`;
+        } else {
+          guideEl.style.top = `${valuePx}px`;
+        }
+      }
+
+      function updateGuides(guides, guideX, guideY) {
+        if (!guides) return;
+        setGuide(guides.v, guideX, "v");
+        setGuide(guides.h, guideY, "h");
+      }
+
+      function collectAlignmentTargets(canvas, movingEl) {
+        const canvasRect = canvas.getBoundingClientRect();
+        const xs = [];
+        const ys = [];
+        canvas.querySelectorAll(".builder-component").forEach((node) => {
+          if (node === movingEl) return;
+          const rect = node.getBoundingClientRect();
+          const left = rect.left - canvasRect.left;
+          const top = rect.top - canvasRect.top;
+          const right = left + rect.width;
+          const bottom = top + rect.height;
+          const centerX = left + rect.width / 2;
+          const centerY = top + rect.height / 2;
+          xs.push(left, right, centerX);
+          ys.push(top, bottom, centerY);
+        });
+        return { xs, ys, canvasRect };
+      }
+
+      function applyDragSnap(nextLeftPx, nextTopPx, widthPx, heightPx, targets, tolerance, bounds) {
+        let bestX = { diff: Infinity, value: nextLeftPx, guide: null };
+        let bestY = { diff: Infinity, value: nextTopPx, guide: null };
+
+        targets.xs.forEach((target) => {
+          const diffLeft = target - nextLeftPx;
+          const diffRight = target - (nextLeftPx + widthPx);
+          const diffCenter = target - (nextLeftPx + widthPx / 2);
+          const candidates = [
+            { diff: diffLeft, left: target },
+            { diff: diffRight, left: target - widthPx },
+            { diff: diffCenter, left: target - widthPx / 2 },
+          ];
+          candidates.forEach((cand) => {
+            const absDiff = Math.abs(cand.diff);
+            if (absDiff <= tolerance && absDiff < bestX.diff) {
+              bestX = { diff: absDiff, value: cand.left, guide: target };
+            }
+          });
+        });
+
+        targets.ys.forEach((target) => {
+          const diffTop = target - nextTopPx;
+          const diffBottom = target - (nextTopPx + heightPx);
+          const diffCenter = target - (nextTopPx + heightPx / 2);
+          const candidates = [
+            { diff: diffTop, top: target },
+            { diff: diffBottom, top: target - heightPx },
+            { diff: diffCenter, top: target - heightPx / 2 },
+          ];
+          candidates.forEach((cand) => {
+            const absDiff = Math.abs(cand.diff);
+            if (absDiff <= tolerance && absDiff < bestY.diff) {
+              bestY = { diff: absDiff, value: cand.top, guide: target };
+            }
+          });
+        });
+
+        const maxLeft = bounds.width - widthPx;
+        const maxTop = bounds.height - heightPx;
+        const leftPx = clamp(bestX.value, 0, Math.max(0, maxLeft));
+        const topPx = clamp(bestY.value, 0, Math.max(0, maxTop));
+
+        return {
+          leftPx,
+          topPx,
+          guideX: bestX.guide,
+          guideY: bestY.guide,
+        };
+      }
+
+      function applyResizeSnap(leftPx, topPx, widthPx, heightPx, targets, tolerance, bounds, minWidthPx, minHeightPx) {
+        let bestX = { diff: Infinity, width: widthPx, guide: null, apply: false };
+        let bestY = { diff: Infinity, height: heightPx, guide: null, apply: false };
+        const maxWidthPx = Math.max(minWidthPx, bounds.width - leftPx);
+        const maxHeightPx = Math.max(minHeightPx, bounds.height - topPx);
+
+        targets.xs.forEach((target) => {
+          const diffRight = target - (leftPx + widthPx);
+          const diffCenter = target - (leftPx + widthPx / 2);
+          const diffLeft = target - leftPx;
+          const candidates = [
+            { diff: diffRight, width: target - leftPx, apply: true },
+            { diff: diffCenter, width: (target - leftPx) * 2, apply: true },
+            { diff: diffLeft, width: widthPx, apply: false },
+          ];
+          candidates.forEach((cand) => {
+            const absDiff = Math.abs(cand.diff);
+            if (absDiff <= tolerance && absDiff < bestX.diff) {
+              const nextWidth = clamp(cand.width, minWidthPx, maxWidthPx);
+              if (cand.apply && nextWidth !== cand.width) return;
+              bestX = { diff: absDiff, width: nextWidth, guide: target, apply: cand.apply };
+            }
+          });
+        });
+
+        targets.ys.forEach((target) => {
+          const diffBottom = target - (topPx + heightPx);
+          const diffCenter = target - (topPx + heightPx / 2);
+          const diffTop = target - topPx;
+          const candidates = [
+            { diff: diffBottom, height: target - topPx, apply: true },
+            { diff: diffCenter, height: (target - topPx) * 2, apply: true },
+            { diff: diffTop, height: heightPx, apply: false },
+          ];
+          candidates.forEach((cand) => {
+            const absDiff = Math.abs(cand.diff);
+            if (absDiff <= tolerance && absDiff < bestY.diff) {
+              const nextHeight = clamp(cand.height, minHeightPx, maxHeightPx);
+              if (cand.apply && nextHeight !== cand.height) return;
+              bestY = { diff: absDiff, height: nextHeight, guide: target, apply: cand.apply };
+            }
+          });
+        });
+
+        return {
+          widthPx: bestX.width,
+          heightPx: bestY.height,
+          guideX: bestX.guide,
+          guideY: bestY.guide,
+        };
       }
 
       function parseProps(el) {
@@ -375,26 +536,56 @@
         event.preventDefault();
         const canvas = getCanvas();
         if (!canvas) return;
-        const rect = canvas.getBoundingClientRect();
+        const targets = collectAlignmentTargets(canvas, el);
+        const rect = targets.canvasRect;
+        const guides = getGuides(canvas);
         const startX = event.clientX;
         const startY = event.clientY;
-        const startLeft = parseFloat(el.style.left) || 0;
-        const startTop = parseFloat(el.style.top) || 0;
-        const width = parseFloat(el.style.width) || 0;
-        const height = parseFloat(el.style.height) || 0;
+        const startLeftPct = parseFloat(el.style.left) || 0;
+        const startTopPct = parseFloat(el.style.top) || 0;
+        const widthPct = parseFloat(el.style.width) || 0;
+        const heightPct = parseFloat(el.style.height) || 0;
+        const widthPx = rect.width * (widthPct / 100);
+        const heightPx = rect.height * (heightPct / 100);
+        const startLeftPx = rect.width * (startLeftPct / 100);
+        const startTopPx = rect.height * (startTopPct / 100);
+        let rafId = null;
+        let latestEvent = null;
 
-        function onMove(ev) {
+        function applyMove(ev) {
           const dx = ev.clientX - startX;
           const dy = ev.clientY - startY;
-          const nextLeft = Math.min(Math.max(startLeft + (dx / rect.width) * 100, 0), 100 - width);
-          const nextTop = Math.min(Math.max(startTop + (dy / rect.height) * 100, 0), 100 - height);
-          el.style.left = `${nextLeft}%`;
-          el.style.top = `${nextTop}%`;
+          const nextLeftPx = clamp(startLeftPx + dx, 0, rect.width - widthPx);
+          const nextTopPx = clamp(startTopPx + dy, 0, rect.height - heightPx);
+          const snapped = applyDragSnap(
+            nextLeftPx,
+            nextTopPx,
+            widthPx,
+            heightPx,
+            targets,
+            SNAP_TOLERANCE,
+            rect
+          );
+          el.style.left = `${(snapped.leftPx / rect.width) * 100}%`;
+          el.style.top = `${(snapped.topPx / rect.height) * 100}%`;
+          updateGuides(guides, snapped.guideX, snapped.guideY);
+        }
+
+        function onMove(ev) {
+          latestEvent = ev;
+          if (rafId) return;
+          rafId = requestAnimationFrame(() => {
+            rafId = null;
+            if (!latestEvent) return;
+            applyMove(latestEvent);
+          });
         }
 
         function onUp() {
           window.removeEventListener("pointermove", onMove);
           window.removeEventListener("pointerup", onUp);
+          if (rafId) cancelAnimationFrame(rafId);
+          updateGuides(guides, null, null);
           syncDraftFromDom();
           queueSave();
         }
@@ -407,24 +598,60 @@
         event.preventDefault();
         const canvas = getCanvas();
         if (!canvas) return;
-        const rect = canvas.getBoundingClientRect();
+        const targets = collectAlignmentTargets(canvas, el);
+        const rect = targets.canvasRect;
+        const guides = getGuides(canvas);
         const startX = event.clientX;
         const startY = event.clientY;
-        const startW = parseFloat(el.style.width) || 10;
-        const startH = parseFloat(el.style.height) || 10;
+        const startLeftPct = parseFloat(el.style.left) || 0;
+        const startTopPct = parseFloat(el.style.top) || 0;
+        const startWPct = parseFloat(el.style.width) || 10;
+        const startHPct = parseFloat(el.style.height) || 10;
+        const startLeftPx = rect.width * (startLeftPct / 100);
+        const startTopPx = rect.height * (startTopPct / 100);
+        const startWidthPx = rect.width * (startWPct / 100);
+        const startHeightPx = rect.height * (startHPct / 100);
+        const minWidthPx = rect.width * 0.05;
+        const minHeightPx = rect.height * 0.05;
+        let rafId = null;
+        let latestEvent = null;
 
-        function onMove(ev) {
+        function applyResize(ev) {
           const dx = ev.clientX - startX;
           const dy = ev.clientY - startY;
-          const nextW = Math.min(Math.max(startW + (dx / rect.width) * 100, 5), 100);
-          const nextH = Math.min(Math.max(startH + (dy / rect.height) * 100, 5), 100);
-          el.style.width = `${nextW}%`;
-          el.style.height = `${nextH}%`;
+          const baseWidth = clamp(startWidthPx + dx, minWidthPx, rect.width - startLeftPx);
+          const baseHeight = clamp(startHeightPx + dy, minHeightPx, rect.height - startTopPx);
+          const snapped = applyResizeSnap(
+            startLeftPx,
+            startTopPx,
+            baseWidth,
+            baseHeight,
+            targets,
+            SNAP_TOLERANCE,
+            rect,
+            minWidthPx,
+            minHeightPx
+          );
+          el.style.width = `${(snapped.widthPx / rect.width) * 100}%`;
+          el.style.height = `${(snapped.heightPx / rect.height) * 100}%`;
+          updateGuides(guides, snapped.guideX, snapped.guideY);
+        }
+
+        function onMove(ev) {
+          latestEvent = ev;
+          if (rafId) return;
+          rafId = requestAnimationFrame(() => {
+            rafId = null;
+            if (!latestEvent) return;
+            applyResize(latestEvent);
+          });
         }
 
         function onUp() {
           window.removeEventListener("pointermove", onMove);
           window.removeEventListener("pointerup", onUp);
+          if (rafId) cancelAnimationFrame(rafId);
+          updateGuides(guides, null, null);
           syncDraftFromDom();
           queueSave();
         }
@@ -535,6 +762,7 @@
         const first = canvas.querySelector(".builder-component");
         if (first) selectComponent(first);
         else renderPropsPanel(null, {});
+        syncActiveScreenButton();
       }
 
       function collectComponents() {
@@ -859,6 +1087,174 @@
         });
       }
 
+      function setScreenOrderStatus(message, status) {
+        if (!screenOrderStatusEl) return;
+        screenOrderStatusEl.textContent = message || "";
+        if (status) {
+          screenOrderStatusEl.dataset.status = status;
+        } else {
+          delete screenOrderStatusEl.dataset.status;
+        }
+        if (statusTimeout) {
+          clearTimeout(statusTimeout);
+          statusTimeout = null;
+        }
+      }
+
+      function getScreenOrderIds() {
+        if (!screenListEl) return [];
+        return Array.from(screenListEl.querySelectorAll(".builder-screen-btn"))
+          .map((btn) => Number(btn.dataset.screenId))
+          .filter((value) => Number.isFinite(value));
+      }
+
+      function syncActiveScreenButton() {
+        if (!screenListEl || !currentScreenId) return;
+        screenListEl.querySelectorAll(".builder-screen-btn").forEach((btn) => {
+          const id = Number(btn.dataset.screenId);
+          if (id === currentScreenId) btn.classList.add("active");
+          else btn.classList.remove("active");
+        });
+      }
+
+      function updateScreenOrderLabels() {
+        if (!screenListEl) return;
+        const buttons = Array.from(screenListEl.querySelectorAll(".builder-screen-btn"));
+        buttons.forEach((btn, idx) => {
+          const id = btn.dataset.screenId || "";
+          btn.dataset.orderIndex = String(idx);
+          btn.innerHTML = `Tela ${idx + 1} <small>#${id}</small>`;
+        });
+        syncActiveScreenButton();
+      }
+
+      function applyScreenOrder(orderIds) {
+        if (!screenListEl) return;
+        orderIds.forEach((screenId) => {
+          const btn = screenListEl.querySelector(`.builder-screen-btn[data-screen-id="${screenId}"]`);
+          if (btn) screenListEl.appendChild(btn);
+        });
+      }
+
+      async function persistScreenOrder(orderIds) {
+        if (!scenarioId) return false;
+        setScreenOrderStatus("Salvando ordem...", "saving");
+        try {
+          const res = await fetch(`/scenarios/${scenarioId}/screens/reorder`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ screen_ids: orderIds }),
+          });
+          if (!res.ok) throw new Error("Falha ao persistir ordem");
+          try {
+            await res.json();
+          } catch {
+            // ignore body parsing errors
+          }
+          setScreenOrderStatus("Ordem salva", "saved");
+          statusTimeout = window.setTimeout(() => setScreenOrderStatus("", ""), 1800);
+          return true;
+        } catch (err) {
+          console.error(err);
+          setScreenOrderStatus("Erro ao salvar ordem.", "error");
+          statusTimeout = window.setTimeout(() => setScreenOrderStatus("", ""), 2500);
+          return false;
+        }
+      }
+
+      function getDragAfterElement(container, y) {
+        const elements = [...container.querySelectorAll(".builder-screen-btn:not(.dragging)")];
+        return elements.reduce(
+          (closest, child) => {
+            const box = child.getBoundingClientRect();
+            const offset = y - (box.top + box.height / 2);
+            if (offset < 0 && offset > closest.offset) {
+              return { offset, element: child };
+            }
+            return closest;
+          },
+          { offset: Number.NEGATIVE_INFINITY, element: null }
+        ).element;
+      }
+
+      function handleScreenDragStart(ev) {
+        if (!screenListEl) return;
+        const target = ev.currentTarget;
+        if (!target) return;
+        draggingScreenEl = target;
+        dragSnapshot = getScreenOrderIds();
+        draggingScreenEl.classList.add("dragging");
+        if (ev.dataTransfer) {
+          ev.dataTransfer.effectAllowed = "move";
+          ev.dataTransfer.setData("text/plain", draggingScreenEl.dataset.screenId || "");
+        }
+      }
+
+      function handleScreenDragEnd() {
+        if (draggingScreenEl) draggingScreenEl.classList.remove("dragging");
+        draggingScreenEl = null;
+        if (dropPlaceholder.parentElement) dropPlaceholder.remove();
+      }
+
+      function handleScreenDragOver(ev) {
+        if (!draggingScreenEl || !screenListEl) return;
+        ev.preventDefault();
+        const afterElement = getDragAfterElement(screenListEl, ev.clientY);
+        if (afterElement == null) {
+          screenListEl.appendChild(dropPlaceholder);
+        } else {
+          screenListEl.insertBefore(dropPlaceholder, afterElement);
+        }
+      }
+
+      async function handleScreenDrop(ev) {
+        if (!draggingScreenEl || !screenListEl) return;
+        ev.preventDefault();
+        if (!dropPlaceholder.parentElement) {
+          screenListEl.appendChild(dropPlaceholder);
+        }
+        screenListEl.insertBefore(draggingScreenEl, dropPlaceholder);
+        dropPlaceholder.remove();
+        draggingScreenEl.classList.remove("dragging");
+        draggingScreenEl = null;
+        const nextOrder = getScreenOrderIds();
+        if (!nextOrder.length || JSON.stringify(nextOrder) === JSON.stringify(dragSnapshot)) {
+          updateScreenOrderLabels();
+          return;
+        }
+        updateScreenOrderLabels();
+        const success = await persistScreenOrder(nextOrder);
+        if (!success) {
+          applyScreenOrder(dragSnapshot);
+          updateScreenOrderLabels();
+        }
+      }
+
+      function setupScreenReorder() {
+        if (!screenListEl || screenListEl.dataset.dragReady) return;
+        screenListEl.dataset.dragReady = "true";
+        screenListEl.addEventListener("dragover", handleScreenDragOver);
+        screenListEl.addEventListener("drop", handleScreenDrop);
+      }
+
+      function attachScreenButtonHandlers(btn, screenOrderIndex) {
+        if (!btn) return;
+        btn.dataset.orderIndex = String(screenOrderIndex);
+        if (!btn.dataset.screenId) {
+          const screenId = btn.getAttribute("data-screen-id");
+          if (screenId) btn.dataset.screenId = screenId;
+        }
+        btn.setAttribute("draggable", "true");
+        btn.addEventListener("click", () => {
+          document.querySelectorAll(".builder-screen-btn").forEach((b) => b.classList.remove("active"));
+          btn.classList.add("active");
+          const order = Number(btn.dataset.orderIndex || 0);
+          loadScreenByOrder(order);
+        });
+        btn.addEventListener("dragstart", handleScreenDragStart);
+        btn.addEventListener("dragend", handleScreenDragEnd);
+      }
+
       async function fetchScreens() {
         try {
           const res = await fetch(`/scenarios/${scenarioId}/screens`);
@@ -886,17 +1282,17 @@
           .forEach((screen, idx) => {
             const btn = document.createElement("button");
             btn.className = "builder-screen-btn";
-            btn.dataset.orderIndex = screen.order_index;
-            btn.textContent = `Tela ${idx + 1}  (#${screen.id})`;
-            btn.addEventListener("click", () => {
-              document.querySelectorAll(".builder-screen-btn").forEach((b) => b.classList.remove("active"));
-              btn.classList.add("active");
-              loadScreenByOrder(screen.order_index);
-            });
+            btn.dataset.screenId = screen.id;
+            btn.innerHTML = `Tela ${idx + 1} <small>#${screen.id}</small>`;
+            attachScreenButtonHandlers(btn, screen.order_index);
             screenListEl.appendChild(btn);
           });
-        const first = screenListEl.querySelector(".builder-screen-btn");
-        if (first) first.classList.add("active");
+        if (currentScreenId) {
+          syncActiveScreenButton();
+        } else {
+          const first = screenListEl.querySelector(".builder-screen-btn");
+          if (first) first.classList.add("active");
+        }
       }
 
       async function loadScreenByOrder(orderIndex) {
@@ -913,18 +1309,15 @@
 
       function wireExistingScreenButtons() {
         document.querySelectorAll(".builder-screen-btn").forEach((btn) => {
-          btn.addEventListener("click", () => {
-            document.querySelectorAll(".builder-screen-btn").forEach((b) => b.classList.remove("active"));
-            btn.classList.add("active");
-            const order = Number(btn.dataset.orderIndex || 0);
-            loadScreenByOrder(order);
-          });
+          const orderIndex = Number(btn.dataset.orderIndex || 0);
+          attachScreenButtonHandlers(btn, orderIndex);
         });
       }
 
       wireExistingScreenButtons();
       initCanvas();
       refreshScreenList();
+      setupScreenReorder();
     })();
   </script>
 {% endblock %}

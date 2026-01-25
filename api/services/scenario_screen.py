@@ -4,7 +4,7 @@ from typing import Sequence
 
 from sqlalchemy.orm import Session
 
-from core.exceptions import NotFoundError
+from core.exceptions import BadRequestError, NotFoundError
 from models.scenario import Scenario
 from models.scenario_screen import ScenarioScreen, ScenarioScreenType
 from models.scenario_screen_slider_image import ScenarioScreenSliderImage
@@ -193,3 +193,42 @@ def update_screen_components(
     db.commit()
     db.refresh(screen)
     return screen
+
+
+def reorder_screens_for_scenario(
+    db: Session,
+    scenario_id: int,
+    screen_ids: Sequence[int],
+) -> list[ScenarioScreen]:
+    scenario_screens = (
+        db.query(ScenarioScreen)
+        .filter(ScenarioScreen.scenario_id == scenario_id)
+        .all()
+    )
+    if not scenario_screens:
+        return []
+    if not screen_ids:
+        raise BadRequestError("A lista de telas não pode estar vazia.")
+    if len(set(screen_ids)) != len(screen_ids):
+        raise BadRequestError("A lista de telas contém IDs duplicados.")
+
+    existing_ids = {screen.id for screen in scenario_screens}
+    if set(screen_ids) != existing_ids:
+        raise BadRequestError("A lista de telas não corresponde ao cenário informado.")
+
+    screens_by_id = {screen.id: screen for screen in scenario_screens}
+    for idx, screen_id in enumerate(screen_ids):
+        screen = screens_by_id.get(screen_id)
+        if not screen:
+            raise BadRequestError("A lista de telas não corresponde ao cenário informado.")
+        screen.order_index = idx
+        db.add(screen)
+
+    db.commit()
+    ordered = (
+        db.query(ScenarioScreen)
+        .filter(ScenarioScreen.scenario_id == scenario_id)
+        .order_by(ScenarioScreen.order_index)
+        .all()
+    )
+    return ordered

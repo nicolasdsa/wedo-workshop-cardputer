@@ -49,6 +49,10 @@ class ScenarioScreenUpdatePayload(BaseModel):
     animation_key: str | None = None
 
 
+class ScenarioScreenReorderPayload(BaseModel):
+    screen_ids: list[int] = Field(default_factory=list)
+
+
 def update_screen(
     screen_id: int, payload: ScenarioScreenUpdatePayload, db: Session
 ):
@@ -65,3 +69,13 @@ def update_screen(
 def delete_screen(screen_id: int, db: Session):
     scenario_screen_service.delete_screen(db=db, screen_id=screen_id)
     return HTMLResponse(content="", status_code=204)
+
+
+def reorder_screens(
+    scenario_id: int, payload: ScenarioScreenReorderPayload, db: Session
+):
+    screens = scenario_screen_service.reorder_screens_for_scenario(
+        db=db, scenario_id=scenario_id, screen_ids=payload.screen_ids
+    )
+    data = [ScenarioScreenRead.model_validate(item).model_dump(mode="json") for item in screens]
+    return HTMLResponse(content=json.dumps(data), status_code=200)

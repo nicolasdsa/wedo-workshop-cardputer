@@ -3,10 +3,12 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from controllers.scenario_screen import (
+    ScenarioScreenReorderPayload,
     ScenarioScreenUpdatePayload,
     create_screens_for_scenario,
     get_screen,
     list_screens_for_scenario,
+    reorder_screens,
     update_screen,
     delete_screen,
 )
@@ -56,6 +58,18 @@ def update_screen_route(
     db: Session = Depends(get_db),
 ):
     return update_screen(screen_id, payload, db)
+
+
+@router.patch(
+    "/scenarios/{scenario_id}/screens/reorder",
+    response_class=HTMLResponse,
+)
+def reorder_screens_route(
+    scenario_id: int,
+    payload: ScenarioScreenReorderPayload,
+    db: Session = Depends(get_db),
+):
+    return reorder_screens(scenario_id, payload, db)
 
 
 @router.delete(
