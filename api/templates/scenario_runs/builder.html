@@ -5,7 +5,7 @@
 {% block content %}
   <section class="builder-header">
     <h2>Canvas de componentes - {{ scenario.title }}</h2>
-    <p>Arraste e redimensione blocos, edite propriedades e salve. Use uploads para imagens/GIFs.</p>
+    <p>Arraste e redimensione blocos, edite propriedades e salve automaticamente. Use uploads para imagens/GIFs.</p>
   </section>
 
   <section class="builder-layout">
@@ -29,12 +29,13 @@
           <button type="button" class="palette-btn" data-component-type="image">Imagem</button>
           <button type="button" class="palette-btn" data-component-type="gallery">Galeria</button>
           <button type="button" class="palette-btn" data-component-type="gif">GIF</button>
-          <button type="button" class="palette-btn" data-component-type="button">Botão</button>
         </div>
       </div>
 
       <div class="builder-actions">
-        <button id="builder-save" type="button">Salvar tela</button>
+        <div id="builder-save-status" class="builder-save-status" data-status="saved" aria-live="polite">
+          Salvo
+        </div>
       </div>
     </aside>
 
@@ -92,9 +93,6 @@
     <template data-template="gallery">
       {% include "scenario_runs/partials/builder_props/gallery.html" %}
     </template>
-    <template data-template="button">
-      {% include "scenario_runs/partials/builder_props/button.html" %}
-    </template>
   </div>
 
   <template id="gallery-item-template">
@@ -113,7 +111,7 @@
     (function () {
       const canvasContainer = document.getElementById("builder-canvas");
       const paletteButtons = document.querySelectorAll(".palette-btn");
-      const saveButton = document.getElementById("builder-save");
+      const saveStatusEl = document.getElementById("builder-save-status");
       const animationInput = document.getElementById("animation-key-input");
       const animationEntrySelect = document.getElementById("animation-entry-select");
       const animationPreviewChip = document.getElementById("animation-preview-chip");
@@ -132,14 +130,12 @@
         image: { src: "", alt: "Imagem", fit: "contain" },
         gallery: { items: [], start_index: 0, transition: "fade", show_controls: true },
         gif: { src: "", first_frame_src: "", alt: "GIF", paused: false, show_controls: true },
-        button: { label: "Próximo", action: { type: "next" } },
       };
       const defaultSizes = {
         text: { w: 60, h: 18 },
         image: { w: 38, h: 32 },
         gallery: { w: 50, h: 38 },
         gif: { w: 40, h: 30 },
-        button: { w: 12, h: 6 },
       };
       const SNAP_TOLERANCE = 6;
 
@@ -147,6 +143,8 @@
       let currentScreenId = null;
       let draftComponents = [];
       let saveTimeout = null;
+      let saveInFlight = false;
+      let pendingSave = false;
       let isSyncingAnimation = false;
       let draggingScreenEl = null;
       let dragSnapshot = [];
@@ -254,6 +252,16 @@
         animationInput.value = buildAnimationKey(entry, "");
         updateAnimationPreview();
         queueSave();
+      }
+
+      function setSaveStatus(message, status) {
+        if (!saveStatusEl) return;
+        saveStatusEl.textContent = message || "";
+        if (status) {
+          saveStatusEl.dataset.status = status;
+        } else {
+          delete saveStatusEl.dataset.status;
+        }
       }
 
       function getCanvas() {
@@ -444,22 +452,6 @@
             ].filter(Boolean).join(" ");
             inner.style.fontSize = props.font_size ? `${props.font_size}px` : "";
             inner.textContent = props.text || "";
-          }
-        } else if (type === "button") {
-          const btn = el.querySelector(".canvas-button");
-          if (btn) {
-            btn.textContent = props.label || "Próximo";
-            btn.dataset.buttonAction = props.action?.type || "next";
-            if (props.action && props.action.target_index !== undefined && props.action.target_index !== null) {
-              btn.dataset.targetIndex = props.action.target_index;
-            } else {
-              btn.removeAttribute("data-target-index");
-            }
-            if (props.action && props.action.target_component_key) {
-              btn.dataset.targetComponentKey = props.action.target_component_key;
-            } else {
-              btn.removeAttribute("data-target-component-key");
-            }
           }
         } else if (type === "image" || type === "gif") {
           const controls = type === "gif" ? el.querySelector(".gif-controls") : null;
@@ -720,15 +712,6 @@
           const sizeStyle = props.font_size ? ` style="font-size:${props.font_size}px"` : "";
           return `<div class="text-component text-${props.variant || "paragraph"}"><span class="${innerClasses}"${sizeStyle}>${props.text || ""}</span></div>`;
         }
-        if (type === "button") {
-          const targetAttr = props.action && props.action.target_index !== undefined
-            ? ` data-target-index="${props.action.target_index}"`
-            : "";
-          const gifAttr = props.action && props.action.target_component_key
-            ? ` data-target-component-key="${props.action.target_component_key}"`
-            : "";
-          return `<button type="button" class="canvas-button" data-button-action="${props.action?.type || "next"}"${targetAttr}${gifAttr}>${props.label || "Próximo"}</button>`;
-        }
         if (type === "image") {
           const src = props.src ? assetUrl(props.src) : "";
           return `<div class="media-frame image-component">${props.src ? `<img src="${src}" alt="${props.alt || "Imagem"}" style="object-fit:${props.fit || "contain"};" />` : `<div class="media-placeholder">Imagem</div>`}</div>`;
@@ -808,10 +791,18 @@
       async function saveScreen() {
         const canvas = getCanvas();
         if (!canvas || !currentScreenId) return;
+        if (saveInFlight) {
+          pendingSave = true;
+          return;
+        }
+        saveInFlight = true;
+        pendingSave = false;
+        setSaveStatus("Salvando...", "saving");
         const payload = {
           animation_key: animationInput?.value || null,
           components: collectComponents(),
         };
+        let savedOk = false;
         try {
           const response = await fetch(`/scenario-screens/${currentScreenId}`, {
             method: "PATCH",
@@ -820,7 +811,10 @@
           });
           if (response.ok) {
             const json = await response.json();
-            draftComponents = (json.components || []).map((c) => ({
+            const filtered = (json.components || []).filter(
+              (c) => c.component_type !== "button"
+            );
+            draftComponents = filtered.map((c) => ({
               id: c.id,
               key: c.props?._key || c.id || uid(),
               component_type: c.component_type,
@@ -832,11 +826,22 @@
               z_index: c.z_index,
               props: c.props || {},
             }));
+            savedOk = true;
           }
         } catch (err) {
           console.error("Erro ao salvar tela", err);
         } finally {
           saveTimeout = null;
+          saveInFlight = false;
+        }
+        if (savedOk) {
+          setSaveStatus("Salvo", "saved");
+        } else {
+          setSaveStatus("Erro ao salvar", "error");
+        }
+        if (pendingSave) {
+          pendingSave = false;
+          saveScreen();
         }
       }
 
@@ -851,12 +856,6 @@
           if (type) addComponent(type);
         });
       });
-
-      if (saveButton) {
-        saveButton.addEventListener("click", () => {
-          saveScreen();
-        });
-      }
 
       if (animationEntrySelect) {
         populateAnimationSelect(animationEntrySelect, animationEntryOptions);
@@ -984,45 +983,6 @@
           renderItems();
         }
 
-        if (type === "button") {
-          const actionSelect = propsContainer.querySelector("[data-prop='action.type']");
-          const gotoField = propsContainer.querySelector(".conditional-goto");
-          const toggleField = propsContainer.querySelector(".conditional-toggle");
-          const gifSelect = propsContainer.querySelector("[data-gif-options]");
-          if (actionSelect) {
-            actionSelect.addEventListener("change", () => {
-              updatePropValue("action.type", actionSelect);
-              updateActionVisibility(actionSelect.value, gotoField, toggleField);
-            });
-            updateActionVisibility(actionSelect.value, gotoField, toggleField);
-          }
-          if (gifSelect) {
-            populateGifOptions(gifSelect, props.action?.target_component_key);
-            gifSelect.addEventListener("change", () => {
-              updatePropValue("action.target_component_key", gifSelect);
-            });
-          }
-        }
-      }
-
-      function updateActionVisibility(actionType, gotoField, toggleField) {
-        if (gotoField) gotoField.style.display = actionType === "goto" ? "" : "none";
-        if (toggleField) toggleField.style.display = actionType === "toggle_gif" ? "" : "none";
-      }
-
-      function populateGifOptions(selectEl, currentValue) {
-        const canvas = getCanvas();
-        if (!canvas || !selectEl) return;
-        const gifs = Array.from(canvas.querySelectorAll(".builder-component[data-component-type='gif']"));
-        selectEl.innerHTML = '<option value="">Selecione um GIF</option>';
-        gifs.forEach((el) => {
-          const key = el.dataset.componentKey || el.dataset.componentId || "";
-          const option = document.createElement("option");
-          option.value = key;
-          option.textContent = `GIF ${key}`;
-          if (currentValue && currentValue === key) option.selected = true;
-          selectEl.appendChild(option);
-        });
       }
 
       function updatePropValue(propPath, input) {

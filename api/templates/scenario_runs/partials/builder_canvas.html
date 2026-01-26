@@ -4,8 +4,9 @@
      data-screen-index="{{ index }}"
      data-order-index="{{ screen.order_index }}"
      data-animation-key="{{ screen.animation_key or '' }}">
-  {% if screen.components %}
-    {% for component in screen.components %}
+  {% set visible_components = screen.components | selectattr("component_type", "ne", "button") | list %}
+  {% if visible_components %}
+    {% for component in visible_components %}
       {% with builder_mode=True %}
         {% include "scenario_runs/partials/components/component.html" %}
       {% endwith %}

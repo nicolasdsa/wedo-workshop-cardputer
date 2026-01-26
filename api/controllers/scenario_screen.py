@@ -16,16 +16,31 @@ from services import scenario as scenario_service
 from services import scenario_screen as scenario_screen_service
 
 
+def _filter_button_components(screen_data: dict) -> dict:
+    components = screen_data.get("components") or []
+    screen_data["components"] = [
+        comp for comp in components if comp.get("component_type") != "button"
+    ]
+    return screen_data
+
+
 def get_screen(screen_id: int, db: Session):
     screen = scenario_screen_service.get_screen(db, screen_id)
-    data = ScenarioScreenRead.model_validate(screen).model_dump(mode="json")
+    data = _filter_button_components(
+        ScenarioScreenRead.model_validate(screen).model_dump(mode="json")
+    )
     return HTMLResponse(content=json.dumps(data), status_code=200)
 
 
 def list_screens_for_scenario(scenario_id: int, db: Session):
     scenario_service.get_scenario_by_id(db, scenario_id)
     screens = scenario_screen_service.list_screens_for_scenario(db, scenario_id)
-    data = [ScenarioScreenRead.model_validate(item).model_dump(mode="json") for item in screens]
+    data = [
+        _filter_button_components(
+            ScenarioScreenRead.model_validate(item).model_dump(mode="json")
+        )
+        for item in screens
+    ]
     return HTMLResponse(content=json.dumps(data), status_code=200)
 
 
@@ -40,7 +55,12 @@ def create_screens_for_scenario(
     db.commit()
     for screen in created:
         db.refresh(screen)
-    data = [ScenarioScreenRead.model_validate(item).model_dump(mode="json") for item in created]
+    data = [
+        _filter_button_components(
+            ScenarioScreenRead.model_validate(item).model_dump(mode="json")
+        )
+        for item in created
+    ]
     return HTMLResponse(content=json.dumps(data), status_code=201)
 
 
@@ -62,7 +82,9 @@ def update_screen(
         components=[component.model_dump() for component in payload.components],
         animation_key=payload.animation_key,
     )
-    data = ScenarioScreenRead.model_validate(updated).model_dump(mode="json")
+    data = _filter_button_components(
+        ScenarioScreenRead.model_validate(updated).model_dump(mode="json")
+    )
     return HTMLResponse(content=json.dumps(data), status_code=200)
 
 
@@ -77,5 +99,10 @@ def reorder_screens(
     screens = scenario_screen_service.reorder_screens_for_scenario(
         db=db, scenario_id=scenario_id, screen_ids=payload.screen_ids
     )
-    data = [ScenarioScreenRead.model_validate(item).model_dump(mode="json") for item in screens]
+    data = [
+        _filter_button_components(
+            ScenarioScreenRead.model_validate(item).model_dump(mode="json")
+        )
+        for item in screens
+    ]
     return HTMLResponse(content=json.dumps(data), status_code=200)

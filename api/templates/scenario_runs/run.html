@@ -491,36 +491,6 @@
         });
       }
 
-      function setupButtonComponent(componentEl, screenIndex) {
-        if (!componentEl) return;
-        const actionType = componentEl.dataset.buttonAction || "next";
-        const targetIndexAttr = componentEl.dataset.targetIndex;
-        const targetComponentKey = componentEl.dataset.targetComponentKey;
-
-        componentEl.addEventListener("click", function () {
-          if (actionType === "goto" && targetIndexAttr !== undefined && targetIndexAttr !== "") {
-            const targetIdx = Number(targetIndexAttr);
-            if (!Number.isNaN(targetIdx)) {
-              loadScreen(targetIdx);
-            }
-            return;
-          }
-          if (actionType === "toggle_gif" && targetComponentKey) {
-            const currentScreen = componentEl.closest(".scenario-screen");
-            if (currentScreen) {
-              const target = currentScreen.querySelector(
-                `.canvas-component[data-component-key="${targetComponentKey}"] .gif-toggle`
-              );
-              if (target) target.click();
-            }
-            return;
-          }
-          if (actionType === "next") {
-            loadScreen(screenIndex + 1);
-          }
-        });
-      }
-
       function attachScreenBehaviors(screenElement, screenData, screenIndex) {
         if (!screenElement || !screenData) return;
         const components = Array.from(
@@ -532,8 +502,6 @@
             setupGalleryComponent(componentEl, screenData);
           } else if (type === "gif") {
             setupGifComponent(componentEl, screenData);
-          } else if (type === "button") {
-            setupButtonComponent(componentEl, screenIndex);
           }
         });
       }

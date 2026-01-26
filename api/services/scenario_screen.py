@@ -36,7 +36,11 @@ def create_screens_for_scenario(
         key=lambda s: s.get("order_index", 0) if isinstance(s, dict) else getattr(s, "order_index", 0),
     ):
         slider_images = _get_value(screen_data, "slider_images")
-        components_data = _get_value(screen_data, "components") or []
+        components_data = [
+            comp
+            for comp in (_get_value(screen_data, "components") or [])
+            if _get_value(comp, "component_type") != "button"
+        ]
         screen = ScenarioScreen(
             scenario_id=scenario.id,
             order_index=_get_value(screen_data, "order_index", 0),
@@ -171,8 +175,14 @@ def update_screen_components(
         except (TypeError, ValueError):
             return default
 
+    filtered_components = [
+        comp
+        for comp in components
+        if _get_value(comp, "component_type") != "button"
+    ]
+
     for idx, comp in enumerate(
-        sorted(components, key=lambda c: _z_index(c))  # type: ignore
+        sorted(filtered_components, key=lambda c: _z_index(c))  # type: ignore
     ):
         z_value = _get_value(comp, "z_index")
         screen.components.append(

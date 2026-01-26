@@ -2,8 +2,9 @@
      data-screen-id="{{ screen.id }}"
      data-screen-type="{{ screen.screen_type }}"
      data-animation-key="{{ screen.animation_key or '' }}">
-  {% if screen.components %}
-    {% for component in screen.components %}
+  {% set visible_components = screen.components | selectattr("component_type", "ne", "button") | list %}
+  {% if visible_components %}
+    {% for component in visible_components %}
       {% include "scenario_runs/partials/components/component.html" %}
     {% endfor %}
   {% else %}

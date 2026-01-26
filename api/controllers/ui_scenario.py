@@ -17,6 +17,14 @@ from services.utils_instruments import split_instruments_by_container
 from schemas.scenario_screen import ScenarioScreenRead
 
 
+def _serialize_screen_without_buttons(screen) -> dict:
+    data = ScenarioScreenRead.model_validate(screen).model_dump(mode="json")
+    data["components"] = [
+        comp for comp in data.get("components", []) if comp.get("component_type") != "button"
+    ]
+    return data
+
+
 def _parse_filter_params(params) -> tuple[str, bool, list[int]]:
     query = (params.get("query") or "").strip()
     show_inactive = (params.get("show_inactive") or "").lower() in {"1", "true", "on", "yes"}
@@ -166,7 +174,7 @@ def run_scenario_page(
     screens = list(scenario.screens) if scenario.screens else []
     screens = sorted(screens, key=lambda screen: screen.order_index)
     screens_json = json.dumps(
-        [ScenarioScreenRead.model_validate(screen).model_dump(mode="json") for screen in screens]
+        [_serialize_screen_without_buttons(screen) for screen in screens]
     )
     run_state = run_service.start_scenario_run(scenario_id, db=db)
     reagents = db.query(Reagent).all()

@@ -105,16 +105,6 @@
         </div>
       {% endif %}
     </div>
-  {% elif component.component_type == "button" %}
-    {% set label = props.get("label", "Próximo") if props else "Próximo" %}
-    {% set action = props.get("action", {}) if props else {} %}
-    <button type="button"
-            class="canvas-button"
-            data-button-action="{{ action.get('type', 'next') }}"
-            {% if action.get('target_index') is not none %}data-target-index="{{ action.get('target_index') }}"{% endif %}
-            {% if action.get('target_component_key') %}data-target-component-key="{{ action.get('target_component_key') }}"{% endif %}>
-      {{ label }}
-    </button>
   {% else %}
     <div class="canvas-unknown">Componente {{ component.component_type }} não suportado.</div>
   {% endif %}
