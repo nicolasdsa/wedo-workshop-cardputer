@@ -1,0 +1,48 @@
+WeDo Workshop for Cardputer - build information
+Build date: 2026-07-27 (America/Sao_Paulo)
+
+Command used for firmware build:
+  pio run
+
+Environment:
+  PlatformIO Core: 6.1.19
+  Environment: cardputer
+  Platform: espressif32 6.7.0
+  Board: m5stack-stamps3 (M5Stack StampS3, ESP32-S3, 8 MB flash)
+  Framework package: framework-arduinoespressif32 3.20016.0
+  Arduino-ESP32: 2.0.16
+  C++ dialect: GNU C++17
+  Partition table: default_8MB.csv from the official PlatformIO board definition
+  USB: ARDUINO_USB_CDC_ON_BOOT=1, ARDUINO_USB_MODE=1
+
+Libraries:
+  M5Cardputer: 1.1.1
+  M5Unified: 0.2.19
+  M5GFX: 0.2.26
+  IRremote: 4.7.1
+  NimBLE-Arduino (h2zero): 2.5.0
+
+Host tests:
+  Native platform: 1.2.1
+  Unity: 2.6.1
+  Result: 9/9 passed
+  Regression: real WeDo 2.0 legacy service 1523 without Manufacturer Data
+
+Build result:
+  Status: SUCCESS
+  RAM: 37496 / 327680 bytes (11.4%)
+  Program storage reported by PlatformIO: 917953 / 3342336 bytes (27.5%)
+
+Application artifact:
+  Source: .pio/build/cardputer/firmware.bin
+  Distribution: dist/wedo-workshop-cardputer.bin
+  File size: 918320 bytes
+  SHA-256: fa1c6aba6a02ab74d95a8cc86dedf27fef18f5b74670ee31dd4bef000007b298
+  ESP image magic byte: 0xE9 (valid)
+  ESP32-S3 entry point: 0x40376E88
+  ESP image segments: 5
+  Image checksum: 0xA5 (valid)
+  Embedded validation hash: 4ac17cd8efd058d867411883a51659374f230e53137147a158abfde340c57dff (valid)
+
+This is an ESP32-S3 application image, not a merged/full-flash dump.
+No USB upload command was run.
