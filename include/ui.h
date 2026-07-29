@@ -1,13 +1,15 @@
 #pragma once
 
-#include "scanner_service.h"
+#include "wedo/connection_model.h"
 
 #include <string>
 
 enum class UiScreen {
     None,
     Scanning,
-    Found,
+    Connecting,
+    Connected,
+    ConnectionError,
     NotFound,
 };
 
@@ -15,7 +17,9 @@ class UserInterface {
 public:
     void begin();
     void showScanning();
-    void showFound(const ScannedDevice& device);
+    void showConnecting(const wedo::ConnectionSnapshot& connection);
+    void showConnected(const wedo::ConnectionSnapshot& connection);
+    void showConnectionError(const std::string& error);
     void showNotFound();
 
 private:
@@ -23,6 +27,5 @@ private:
     static std::string shortened(const std::string& text, size_t limit);
 
     UiScreen current_ = UiScreen::None;
-    std::string lastDeviceSignature_;
+    std::string lastSignature_;
 };
-

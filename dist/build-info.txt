@@ -1,5 +1,5 @@
 WeDo Workshop for Cardputer - build information
-Build date: 2026-07-27 (America/Sao_Paulo)
+Build date: 2026-07-29 (America/Sao_Paulo)
 
 Command used for firmware build:
   pio run
@@ -25,24 +25,31 @@ Libraries:
 Host tests:
   Native platform: 1.2.1
   Unity: 2.6.1
-  Result: 9/9 passed
-  Regression: real WeDo 2.0 legacy service 1523 without Manufacturer Data
+  Result: 15/15 passed across 2 test suites
+  Regressions:
+    - real WeDo 2.0 legacy service 1523 without Manufacturer Data
+    - official 12-byte Attached I/O notification and 2-byte detach format
+    - connection state transitions and module lifecycle
 
 Build result:
   Status: SUCCESS
-  RAM: 37496 / 327680 bytes (11.4%)
-  Program storage reported by PlatformIO: 917953 / 3342336 bytes (27.5%)
+  RAM: 37656 / 327680 bytes (11.5%)
+  Program storage reported by PlatformIO: 934669 / 3342336 bytes (28.0%)
 
 Application artifact:
   Source: .pio/build/cardputer/firmware.bin
   Distribution: dist/wedo-workshop-cardputer.bin
-  File size: 918320 bytes
-  SHA-256: fa1c6aba6a02ab74d95a8cc86dedf27fef18f5b74670ee31dd4bef000007b298
+  File size: 935040 bytes
+  SHA-256: 18e275f70f33f3e68319950907322c6f81326384517d0b69fd55b49a589d9da7
   ESP image magic byte: 0xE9 (valid)
   ESP32-S3 entry point: 0x40376E88
   ESP image segments: 5
-  Image checksum: 0xA5 (valid)
-  Embedded validation hash: 4ac17cd8efd058d867411883a51659374f230e53137147a158abfde340c57dff (valid)
+  Image checksum: 0x6E (valid)
+  Embedded validation hash: e8a0213ca024be9fca584d60634ca39a7a7b9604bae6ff5ac7ee9171ad9b55dd (valid)
+  Image target: ESP32-S3, chip ID 9, 8 MB flash, DIO at 80 MHz
 
 This is an ESP32-S3 application image, not a merged/full-flash dump.
 No USB upload command was run.
+USB verification found the connected Cardputer at /dev/ttyACM0
+(VID:PID 303A:1001). Runtime behavior was not verified because the new image
+must first be installed through M5Launcher WUI.

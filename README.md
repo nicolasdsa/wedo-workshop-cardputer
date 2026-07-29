@@ -5,23 +5,25 @@ Cardputer** (StampS3 / ESP32-S3). The long-term goal is to provide a complete,
 standalone workspace for discovering, configuring, and operating LEGO
 Education WeDo 2.0 hubs and their connected motors and sensors.
 
-The current first release is intentionally discovery-only. It scans nearby
-Bluetooth Low Energy devices, identifies an original WeDo 2.0 Smart Hub from
-official protocol evidence, displays the result, and writes diagnostic details
-to the Serial Monitor. It is installed as a separate M5Launcher application;
-M5Launcher source code is not part of this project.
+The firmware scans nearby Bluetooth Low Energy devices, identifies an original
+WeDo 2.0 Smart Hub from official protocol evidence, connects to it, and displays
+the external modules attached to its two ports. It is installed as a separate
+M5Launcher application; M5Launcher source code is not part of this project.
 
 ## Current release scope
 
 The firmware performs an active, asynchronous BLE scan for about 15 seconds.
-It deduplicates results by BLE address, updates RSSI when advertisements repeat,
-and presents a confirmed WeDo 2.0 hub without blocking the display or keyboard.
+It deduplicates results by BLE address and updates RSSI when advertisements
+repeat. As soon as an officially identified WeDo 2.0 is found, the scan stops
+and an asynchronous BLE connection starts automatically. The firmware then
+subscribes to the hub's official Attached I/O characteristic and shows external
+module changes live without blocking the display or keyboard.
 
-This release does **not** connect, pair, create a GATT client, write to any
-characteristic, control motors, change the hub LED, access port modules, or
-persist data. It requires no microSD card, SPIFFS, LittleFS, FAT partition, or
-external files. `esp32_PoweredUp` is intentionally reserved for a future
-control layer.
+The original WeDo 2.0 profile does not require a PIN or an operating-system
+bond for these characteristics. In this project, “pairing” therefore means
+establishing and maintaining the BLE/GATT connection to the selected hub. The
+firmware does not control motors, change the hub LED, or persist hub identity.
+It requires no microSD card, SPIFFS, LittleFS, FAT partition, or external files.
 
 ## Architecture
 
@@ -30,13 +32,19 @@ control layer.
   `NimBLEAdvertisedDevice::getManufacturerData()`.
 - `scanner_service`: configures NimBLE, handles asynchronous callbacks,
   deduplicates addresses, refreshes RSSI, and produces safe UI snapshots.
+- `wedo/connection_model`: pure C++ parser and state model for Attached I/O
+  notifications, module lifecycles, and connection states.
+- `wedo/connection_service`: owns the NimBLE client, asynchronous connection,
+  dedicated GATT discovery task, and Attached I/O subscription.
 - `ui`: redraws only when the screen state or displayed device changes.
 - `main`: initializes USB Serial, Cardputer, keyboard, and UI, then coordinates
   the application without long blocking delays.
 
 The scanner owns its deduplicated result list and uses `setMaxResults(0)` to
 avoid retaining a second NimBLE result list. Duplicate callbacks remain enabled
-so RSSI can be refreshed. The service never starts overlapping scans.
+so RSSI can be refreshed. The scanner never starts overlapping scans, and the
+scan callback never initiates a connection. Potentially blocking GATT discovery
+runs in a separate FreeRTOS task so the application loop remains responsive.
 
 ## Board and dependencies
 
@@ -88,16 +96,17 @@ Do not run `pio run --target upload`: a direct USB upload may overwrite
 M5Launcher. The distributed artifact is a normal ESP application image, not a
 merged or full-flash dump.
 
-Run the hardware-independent parser tests with:
+Run the hardware-independent parser and connection-model tests with:
 
 ```bash
 pio test -e native
 ```
 
-In the test vectors, `97 03`, the `SSS DDDDD` byte position, and hub type values
-come from the LEGO specification. The complete vectors use illustrative button,
-capability, network, status, and option values because those fields do not
-participate in this release's classification.
+The test suite covers advertisement classification, all connection-state
+transitions, malformed Attached I/O data, module attachment/removal, and stable
+port ordering. In the advertisement vectors, `97 03`, the `SSS DDDDD` byte
+position, and hub type values come from the LEGO specification. The Attached
+I/O regression vector is based on the official WeDo 2.0 SDK packet format.
 
 ## BLE identification criteria
 
@@ -137,16 +146,30 @@ count as identification evidence.
 ## Controls
 
 - On startup, turn on the WeDo 2.0 and press the hub button.
-- `R`: stops the current scan if necessary, clears volatile results, and starts
-  a new scan.
+- Once identified, the hub is connected automatically and its current external
+  modules are listed by port. Attaching or detaching a module updates the list.
+- `R`: disconnects the current hub, clears volatile results, and starts a new
+  scan.
 - `ESC` when provided by the keyboard map, or `Backspace/Del`: resets the
-  application state and scan.
-- `Enter`: intentionally does nothing and never initiates a connection in this
-  release.
+  connection state and scan.
 
-The side indicator turns green only after confirmed WeDo 2.0 identification.
+The side indicator turns green only after the GATT connection and module
+subscription are ready.
 Random/private BLE addresses are displayed as observed, may change between
 sessions, and are never treated as persistent identity.
+
+## Connected modules
+
+The firmware subscribes to characteristic
+`00001527-1212-EFDE-1523-785FEABCD123` in the official WeDo 2.0 device service.
+An attached notification contains the connection ID, physical hub port index,
+I/O type, hardware revision, and firmware revision. A detached notification
+contains the connection ID so the corresponding entry can be removed.
+
+The screen lists the external devices available in the official SDK: motor,
+tilt sensor, and motion sensor. Unknown external type values are retained and
+shown in hexadecimal. Internal hub I/O such as voltage/current sensing, piezo,
+and RGB light is logged to Serial but omitted from the external-port list.
 
 ## Serial logs
 
@@ -158,7 +181,8 @@ pio device monitor -b 115200
 
 Logs include initialization, scan start/end, unique address count, device name,
 address and address type, RSSI, advertised UUIDs, hexadecimal Manufacturer Data,
-classification criteria, and parser errors. No keys or passwords are collected.
+classification criteria, connection/disconnection reasons, subscription state,
+and module attach/detach events. No keys or passwords are collected.
 
 If USB CDC does not appear, use a USB data cable, close any program holding the
 port, and restart the Cardputer. The port number may change after a reboot.
@@ -189,6 +213,10 @@ verified.
 - **No hub found:** verify that the hub is powered, press its button, move it
   closer, and disconnect phones or computers that may already be using it.
   Press `R` to scan again.
+- **Connection failed:** make sure the hub remains awake and is not connected to
+  another phone or computer, then press `R`.
+- **No modules shown:** attach a motor, tilt sensor, or motion sensor to port 1
+  or 2. Internal hub components are intentionally hidden from this list.
 - **LEGO device, but not WeDo:** inspect Manufacturer Data in Serial. A lone
   `1623` service or another `SSS DDDDD` value is insufficient evidence.
 - **Empty name:** this is valid. The screen displays `unknown` and classification
@@ -199,15 +227,15 @@ verified.
 
 ## Roadmap and limitations
 
-This release has been physically validated with an original M5Stack Cardputer
-and an original WeDo 2.0 Smart Hub. Detection of the observed hub uses its
-official dedicated `1523` service even when Manufacturer Data is absent.
+Detection of an observed original WeDo 2.0 hub uses its official dedicated
+`1523` service even when Manufacturer Data is absent. The new connection and
+module-display behavior still requires physical validation on the Cardputer and
+hub after installing the current artifact through M5Launcher.
 
-Future releases may add `esp32_PoweredUp` behind a dedicated connection layer,
-followed by explicit hub selection, connection status, LED configuration, port
-discovery, motor controls, sensor monitoring, and reusable module profiles.
-Those capabilities should remain user-initiated and should preserve the pure,
-hardware-independent advertisement parser.
+Future releases may add hub selection, LED configuration, motor controls,
+sensor monitoring, and reusable module profiles behind the dedicated WeDo
+layer. Those capabilities should preserve the pure, hardware-independent
+advertisement and module parsers.
 
 ## Official references
 

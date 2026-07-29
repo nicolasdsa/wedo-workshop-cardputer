@@ -3,14 +3,18 @@
 
 #include "scanner_service.h"
 #include "ui.h"
+#include "wedo/connection_service.h"
 
 namespace {
 ScannerService scanner;
+wedo::ConnectionService connection;
 UserInterface ui;
 bool restartPending = false;
+bool appReady = false;
 
 void requestFreshScan(const char* source) {
     Serial.printf("[APP] New scan requested by %s\n", source);
+    connection.reset();
     scanner.stopScan();
     restartPending = true;
     ui.showScanning();
@@ -38,7 +42,6 @@ void handleKeyboard() {
             return;
         }
     }
-    // Enter is deliberately ignored: v1 never connects to a hub.
 }
 }  // namespace
 
@@ -51,26 +54,58 @@ void setup() {
 
     Serial.println();
     Serial.println("[APP] WeDo Workshop starting");
-    Serial.println("[APP] Original Cardputer / BLE scan only");
-    Serial.println("[APP] No connection, pairing, or GATT writes");
+    Serial.println("[APP] Original Cardputer / WeDo 2.0 connection");
 
     scanner.begin();
+    if (!connection.begin()) {
+        ui.showConnectionError("Unable to start connection service");
+        return;
+    }
     scanner.startScan();
+    appReady = true;
 }
 
 void loop() {
     M5Cardputer.update();
     handleKeyboard();
 
-    if (restartPending && !scanner.isScanning()) {
+    if (!appReady) {
+        delay(20);
+        return;
+    }
+
+    if (restartPending && connection.readyForScan() &&
+        !scanner.isScanning()) {
         restartPending = !scanner.startScan();
     }
 
-    ScannedDevice wedo;
-    if (scanner.bestWedo(wedo)) {
-        ui.showFound(wedo);
-    } else if (scanner.scanFinished() && !restartPending) {
-        ui.showNotFound();
+    ScannedDevice hub;
+    if (!restartPending && scanner.bestWedo(hub)) {
+        const auto state = connection.snapshot().state;
+        if (state == wedo::ConnectionState::Idle) {
+            scanner.stopScan();
+            connection.connect(hub.name, hub.address, hub.addressType);
+        }
+    }
+
+    const wedo::ConnectionSnapshot snapshot = connection.snapshot();
+    switch (snapshot.state) {
+        case wedo::ConnectionState::Connecting:
+        case wedo::ConnectionState::DiscoveringModules:
+            ui.showConnecting(snapshot);
+            break;
+        case wedo::ConnectionState::Connected:
+            ui.showConnected(snapshot);
+            break;
+        case wedo::ConnectionState::Failed:
+        case wedo::ConnectionState::Disconnected:
+            ui.showConnectionError(snapshot.error);
+            break;
+        case wedo::ConnectionState::Idle:
+            if (scanner.scanFinished() && !restartPending) {
+                ui.showNotFound();
+            }
+            break;
     }
 
     delay(5);
